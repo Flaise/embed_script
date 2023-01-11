@@ -1,0 +1,13 @@
+[package]
+publish = false
+name = "scripting"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+# regex = "1.7.0"
+unicase = "2.6.0"
+
+# [dependencies.nom]
+# version = "7"
+# default-features = false
