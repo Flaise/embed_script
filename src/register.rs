@@ -47,8 +47,7 @@ fn execute(starting_instruction: usize, registers: &mut [Register], instructions
                     index += dist;
                 }
             }
-            // _ => error(),
-            _ => {}
+            _ => todo!(),
         }
 
         index += 1;
