@@ -1,4 +1,3 @@
-use unicase::Ascii;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ScriptError {
@@ -98,29 +97,97 @@ fn next_line(program: &str) -> Progress {
 }
 
 fn matches_command(line: &str, check: &str) -> bool {
+    match_command(line, check).is_some()
+}
+
+fn match_command<'a, 'b>(line: &'a str, check: &'b str) -> Option<&'a str> {
     debug_assert!(check.trim().len() != 0);
+    debug_assert!(line.is_ascii());
+    debug_assert!(check.is_ascii());
+
+    if line.len() == 0 {
+        // nothing to search
+        return None;
+    }
     if line.len() < check.len() {
-        return false;
+        // not enough characters to match the command name
+        return None;
     }
 
-    let mut iline = line.split_ascii_whitespace();
-    let mut icheck = check.split_ascii_whitespace();
-    let mut found = false;
+    let mut end = 0;
+    let mut checki = 0;
+
+    // skip all initial whitespace
+    loop {
+        if !line.as_bytes()[end].is_ascii_whitespace() {
+            break;
+        }
+        end += 1;
+        if end == line.len() {
+            // end of input
+            return None;
+        }
+    }
 
     loop {
-        match (iline.next(), icheck.next()) {
-            (None, None) => break,
-            (None, Some(_)) => return false,
-            (Some(_), None) => break,
-            (Some(a), Some(b)) => {
-                found = true;
-                if Ascii::new(a) != Ascii::new(b) {
-                    return false;
+        let line = line.as_bytes();
+        let check = check.as_bytes();
+
+        if checki == check.len() {
+            // end of search term
+            break;
+        }
+        if end == line.len() {
+            // end of input
+            return None;
+        }
+
+        // matching a space in search term
+        // Extraneous whitespace in search terms isn't supported because the search term is
+        // selected by the provider of a VM, not the user of the VM.
+        if check[checki] == b' ' {
+            checki += 1;
+
+            if !line[end].is_ascii_whitespace() {
+                // input doesn't have matching whitespace
+                return None;
+            }
+
+            // skip all whitespace until end of input or non-whitespace
+            loop {
+                end += 1;
+                if end == line.len() {
+                    // Reaching end of input means there's no match because the search term isn't
+                    // allowed to contain trailing whitespace.
+                    return None;
+                }
+                if !line[end].is_ascii_whitespace() {
+                    // end of whitespace
+                    break;
                 }
             }
         }
+
+        // arrived at end of whitespace
+
+        if !line[end].eq_ignore_ascii_case(&check[checki]) {
+            // visible characters don't match
+            return None;
+        }
+        end += 1;
+        checki += 1;
     }
-    found
+    if checki != check.len() {
+        // end of input before end of search term
+        return None;
+    }
+
+    if end < line.len() && !line.as_bytes()[end].is_ascii_whitespace() {
+        // end of input (one word match) or whitespace after matched portion of input
+        return None;
+    }
+
+    Some(&line[..end])
 }
 
 pub fn parse_line<'a, 'b>(mut program: &'a str, commands: &'b [&str])
@@ -137,8 +204,8 @@ pub fn parse_line<'a, 'b>(mut program: &'a str, commands: &'b [&str])
                 }
 
                 for (command_index, &command) in commands.iter().enumerate() {
-                    if matches_command(line, command) {
-                        let (found, parameters) = line.split_at(command.len());
+                    if let Some(matched) = match_command(line, command) {
+                        let parameters = &line[matched.len()..];
                         let parameters = parameters.trim_start();
 
                         let opline = OpLine {command_index, parameters};
@@ -322,6 +389,7 @@ mod tests {
         assert!(matches_command("set ", "set"));
         assert!(matches_command(" set", "set"));
         assert!(matches_command("\tset", "set"));
+        assert!(matches_command("set t", "set"));
 
         assert!(!matches_command("sdt", "set"));
         assert!(!matches_command("set", "sdt"));
@@ -333,5 +401,15 @@ mod tests {
         assert!(matches_command("end if ", "end if"));
         assert!(matches_command("end  if", "end if"));
         assert!(matches_command("end\tif", "end if"));
+        assert!(matches_command("  end  if ", "end if"));
+
+        assert!(!matches_command("", "a"));
+        assert!(!matches_command("a", "ab"));
+        assert!(!matches_command(" ", "a"));
+    }
+
+    #[test]
+    fn slice_command_name() {
+        assert_eq!(match_command("  end  if ", "end if"), Some("  end  if"));
     }
 }
