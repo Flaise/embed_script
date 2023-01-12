@@ -21,13 +21,13 @@ impl<'a> Environment<'a> {
     }
 }
 
-pub fn script_next<'a, 'b>(Script: &'a mut Script, environment: &'b Environment)
+pub fn script_next<'a, 'b>(script: &'a mut Script, environment: &'b Environment)
 -> ParseOp<'a> {
-    match parse_line(&Script.source, environment.commands) {
+    match parse_line(&script.source, environment.commands) {
         ParseLine::Done => ParseOp::Done,
         ParseLine::Err(error) => ParseOp::Err(error),
         ParseLine::Op {opline, remainder} => {
-            Script.source = remainder;
+            script.source = remainder;
             ParseOp::Op(opline)
         }
     }
@@ -52,40 +52,40 @@ mod tests {
 
     #[test]
     fn multiline() {
-        let mut Script = Script {
+        let mut script = Script {
             source: "version 1\nevent um\nend event",
         };
-        assert_eq!(script_next(&mut Script, ENV), ParseOp::Op(OpLine {command: Ascii::new("version"), parameters: "1"}));
-        assert_eq!(script_next(&mut Script, ENV), ParseOp::Op(OpLine {command: Ascii::new("event"), parameters: "um"}));
-        assert_eq!(script_next(&mut Script, ENV), ParseOp::Op(OpLine {command: Ascii::new("end event"), parameters: ""}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("version"), parameters: "1"}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("event"), parameters: "um"}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("end event"), parameters: ""}));
     }
 
     #[test]
     fn multi_whitespace() {
-        let mut Script = Script {
+        let mut script = Script {
             source: "  version  1\n\nevent um\n\tend event",
         };
-        assert_eq!(script_next(&mut Script, ENV), ParseOp::Op(OpLine {command: Ascii::new("version"), parameters: "1"}));
-        assert_eq!(script_next(&mut Script, ENV), ParseOp::Op(OpLine {command: Ascii::new("event"), parameters: "um"}));
-        assert_eq!(script_next(&mut Script, ENV), ParseOp::Op(OpLine {command: Ascii::new("end event"), parameters: ""}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("version"), parameters: "1"}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("event"), parameters: "um"}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("end event"), parameters: ""}));
     }
 
     #[test]
     fn parse_error() {
-        let mut Script = Script {
+        let mut script = Script {
             source: "version 1\ne vent um\nend event",
         };
-        assert_eq!(script_next(&mut Script, ENV), ParseOp::Op(OpLine {command: Ascii::new("version"), parameters: "1"}));
-        assert!(script_next(&mut Script, ENV).is_err());
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("version"), parameters: "1"}));
+        assert!(script_next(&mut script, ENV).is_err());
     }
 
     #[test]
     fn multi_windows() {
-        let mut Script = Script {
+        let mut script = Script {
             source: "version 1\r\nevent um\r\nend event",
         };
-        assert_eq!(script_next(&mut Script, ENV), ParseOp::Op(OpLine {command: Ascii::new("version"), parameters: "1"}));
-        assert_eq!(script_next(&mut Script, ENV), ParseOp::Op(OpLine {command: Ascii::new("event"), parameters: "um"}));
-        assert_eq!(script_next(&mut Script, ENV), ParseOp::Op(OpLine {command: Ascii::new("end event"), parameters: ""}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("version"), parameters: "1"}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("event"), parameters: "um"}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("end event"), parameters: ""}));
     }
 }
