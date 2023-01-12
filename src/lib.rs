@@ -2,5 +2,5 @@
 
 pub mod parse;
 mod register;
-mod program;
+mod script;
 mod version;
