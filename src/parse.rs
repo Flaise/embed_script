@@ -260,4 +260,23 @@ mod tests {
             remainder: "",
         });
     }
+
+    #[test]
+    fn extra_space_around_parameter() {
+        assert_eq!(parse_line("if   something = 99", COMMANDS), ParseLine::Op {
+            opline: OpLine {
+                command: Ascii::new("if"),
+                parameters: "something = 99",
+            },
+            remainder: "",
+        });
+
+        assert_eq!(parse_line("if\tsomething = 99\t ", COMMANDS), ParseLine::Op {
+            opline: OpLine {
+                command: Ascii::new("if"),
+                parameters: "something = 99",
+            },
+            remainder: "",
+        });
+    }
 }
