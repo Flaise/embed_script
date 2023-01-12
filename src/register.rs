@@ -1,18 +1,19 @@
 
-#[derive(Copy, Clone)]
-struct Instruction {
-    opcode: u8,
-    reg_a: u8,
-    reg_b: u8,
-    reg_c: u8,
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct Instruction {
+    pub opcode: u8,
+    pub reg_a: u8,
+    pub reg_b: u8,
+    pub reg_c: u8,
 }
 
+pub const OP_DONE: u8 = 1;
 /// if A != 0 then jump ([B C] into u16 big endian)
-pub const OP_JUMP_IF: u8 = 1;
+pub const OP_JUMP_IF: u8 = 2;
 /// A <- B + C
-pub const OP_INT_ADD: u8 = 2;
+pub const OP_INT_ADD: u8 = 3;
 /// A <- B = C
-pub const OP_INT_EQ: u8 = 3;
+pub const OP_INT_EQ: u8 = 4;
 
 pub type Register = u32;
 

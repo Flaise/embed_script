@@ -2,7 +2,7 @@ use unicase::Ascii;
 use crate::parse::{ParseOp, parse_line, ParseLine};
 
 pub struct Script<'a> {
-    source: &'a str,
+    pub source: &'a str,
 }
 
 impl<'a> Script<'a> {
