@@ -1,4 +1,3 @@
-use unicase::Ascii;
 use crate::parse::{ParseOp, parse_line, ParseLine};
 
 pub struct Script<'a> {
@@ -12,11 +11,11 @@ impl<'a> Script<'a> {
 }
 
 pub struct Environment<'a> {
-    commands: &'a [Ascii<&'a str>],
+    commands: &'a [&'a str],
 }
 
 impl<'a> Environment<'a> {
-    pub const fn new(commands: &'a [Ascii<&'a str>]) -> Environment<'a> {
+    pub const fn new(commands: &'a [&'a str]) -> Environment<'a> {
         Environment {commands}
     }
 }
@@ -40,13 +39,13 @@ mod tests {
 
     const ENV: &Environment = &Environment {
         commands: &[
-            Ascii::new("if"),
-            Ascii::new("else if"),
-            Ascii::new("end if"),
-            Ascii::new("set"),
-            Ascii::new("event"),
-            Ascii::new("end event"),
-            Ascii::new("version"),
+            "if",
+            "else if",
+            "end if",
+            "set",
+            "event",
+            "end event",
+            "version",
         ]
     };
 
@@ -55,9 +54,9 @@ mod tests {
         let mut script = Script {
             source: "version 1\nevent um\nend event",
         };
-        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("version"), parameters: "1"}));
-        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("event"), parameters: "um"}));
-        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("end event"), parameters: ""}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 6, parameters: "1"}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 4, parameters: "um"}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 5, parameters: ""}));
     }
 
     #[test]
@@ -65,9 +64,9 @@ mod tests {
         let mut script = Script {
             source: "  version  1\n\nevent um\n\tend event",
         };
-        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("version"), parameters: "1"}));
-        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("event"), parameters: "um"}));
-        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("end event"), parameters: ""}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 6, parameters: "1"}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 4, parameters: "um"}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 5, parameters: ""}));
     }
 
     #[test]
@@ -75,7 +74,7 @@ mod tests {
         let mut script = Script {
             source: "version 1\ne vent um\nend event",
         };
-        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("version"), parameters: "1"}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 6, parameters: "1"}));
         assert!(script_next(&mut script, ENV).is_err());
     }
 
@@ -84,8 +83,8 @@ mod tests {
         let mut script = Script {
             source: "version 1\r\nevent um\r\nend event",
         };
-        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("version"), parameters: "1"}));
-        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("event"), parameters: "um"}));
-        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command: Ascii::new("end event"), parameters: ""}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 6, parameters: "1"}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 4, parameters: "um"}));
+        assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 5, parameters: ""}));
     }
 }

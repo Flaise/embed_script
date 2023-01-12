@@ -1,15 +1,15 @@
-use unicase::Ascii;
 use crate::parse::{OpLine, ParseOp, ScriptError};
 use crate::script::{Script, script_next, Environment};
 
-const ENV: &Environment = &Environment::new(&[Ascii::new("version")]);
+const ENV: &Environment = &Environment::new(&["version"]);
 
 pub fn pick_version<'a>(script: &'a mut Script) -> Result<&'a str, &'static str> {
     match script_next(script, ENV) {
         ParseOp::Done => Err("version not found"),
         ParseOp::Err(ScriptError::UnknownCommand) => Err("'version' must be the first command in the script"),
         ParseOp::Err(error) => Err(error.static_display()),
-        ParseOp::Op(OpLine {parameters, ..}) => {
+        ParseOp::Op(OpLine {command_index, parameters}) => {
+            debug_assert_eq!(command_index, 0);
             if parameters.len() == 0 {
                 return Err("version parameter missing");
             }

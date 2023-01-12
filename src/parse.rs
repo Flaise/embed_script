@@ -18,7 +18,7 @@ impl ScriptError {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct OpLine<'a> {
-    pub command: Ascii<&'a str>,
+    pub command_index: usize,
     pub parameters: &'a str,
 }
 
@@ -97,7 +97,33 @@ fn next_line(program: &str) -> Progress {
     return Progress::Next {line, remainder};
 }
 
-pub fn parse_line<'a, 'b>(mut program: &'a str, commands: &'b [Ascii<&str>])
+fn matches_command(line: &str, check: &str) -> bool {
+    debug_assert!(check.trim().len() != 0);
+    if line.len() < check.len() {
+        return false;
+    }
+
+    let mut iline = line.split_ascii_whitespace();
+    let mut icheck = check.split_ascii_whitespace();
+    let mut found = false;
+
+    loop {
+        match (iline.next(), icheck.next()) {
+            (None, None) => break,
+            (None, Some(_)) => return false,
+            (Some(_), None) => break,
+            (Some(a), Some(b)) => {
+                found = true;
+                if Ascii::new(a) != Ascii::new(b) {
+                    return false;
+                }
+            }
+        }
+    }
+    found
+}
+
+pub fn parse_line<'a, 'b>(mut program: &'a str, commands: &'b [&str])
 -> ParseLine<'a> {
     loop {
         match next_line(program) {
@@ -110,13 +136,12 @@ pub fn parse_line<'a, 'b>(mut program: &'a str, commands: &'b [Ascii<&str>])
                     continue;
                 }
 
-                for &name in commands {
-                    if line.len() >= name.len() && name == Ascii::new(&line[..name.len()]) {
-                        let (command, parameters) = line.split_at(name.len());
-                        let command = Ascii::new(command);
+                for (command_index, &command) in commands.iter().enumerate() {
+                    if matches_command(line, command) {
+                        let (found, parameters) = line.split_at(command.len());
                         let parameters = parameters.trim_start();
 
-                        let opline = OpLine {command, parameters};
+                        let opline = OpLine {command_index, parameters};
                         return ParseLine::Op {opline, remainder};
                     }
                 }
@@ -133,14 +158,14 @@ pub fn parse_line<'a, 'b>(mut program: &'a str, commands: &'b [Ascii<&str>])
 mod tests {
     use super::*;
 
-    const COMMANDS: &[Ascii<&str>] = &[
-        Ascii::new("if"),
-        Ascii::new("else if"),
-        Ascii::new("end if"),
-        Ascii::new("set"),
-        Ascii::new("event"),
-        Ascii::new("end event"),
-        Ascii::new("version"),
+    const COMMANDS: &[&str] = &[
+        "if", // 0
+        "else if", // 1
+        "end if", // 2
+        "set", // 3
+        "event", // 4
+        "end event", // 5
+        "version", // 6
     ];
 
     #[test]
@@ -176,49 +201,49 @@ mod tests {
     fn find_commands() {
         assert_eq!(parse_line("if something > 5", COMMANDS), ParseLine::Op {
             opline: OpLine {
-                command: Ascii::new("if"),
+                command_index: 0,
                 parameters: "something > 5",
             },
             remainder: "",
         });
         assert_eq!(parse_line("else if something < 7", COMMANDS), ParseLine::Op {
             opline: OpLine {
-                command: Ascii::new("else if"),
+                command_index: 1,
                 parameters: "something < 7",
             },
             remainder: "",
         });
         assert_eq!(parse_line("end if", COMMANDS), ParseLine::Op {
             opline: OpLine {
-                command: Ascii::new("end if"),
+                command_index: 2,
                 parameters: "",
             },
             remainder: "",
         });
         assert_eq!(parse_line("set r <- 20", COMMANDS), ParseLine::Op {
             opline: OpLine {
-                command: Ascii::new("set"),
+                command_index: 3,
                 parameters: "r <- 20",
             },
             remainder: "",
         });
         assert_eq!(parse_line("set y <- 7 - 40", COMMANDS), ParseLine::Op {
             opline: OpLine {
-                command: Ascii::new("set"),
+                command_index: 3,
                 parameters: "y <- 7 - 40",
             },
             remainder: "",
         });
         assert_eq!(parse_line("event do_something", COMMANDS), ParseLine::Op {
             opline: OpLine {
-                command: Ascii::new("event"),
+                command_index: 4,
                 parameters: "do_something",
             },
             remainder: "",
         });
         assert_eq!(parse_line("end event", COMMANDS), ParseLine::Op {
             opline: OpLine {
-                command: Ascii::new("end event"),
+                command_index: 5,
                 parameters: "",
             },
             remainder: "",
@@ -229,7 +254,7 @@ mod tests {
     fn case_insensitive() {
         assert_eq!(parse_line("evENt do_soMEthing", COMMANDS), ParseLine::Op {
             opline: OpLine {
-                command: Ascii::new("event"),
+                command_index: 4,
                 parameters: "do_soMEthing",
             },
             remainder: "",
@@ -240,21 +265,21 @@ mod tests {
     fn indentation() {
         assert_eq!(parse_line("    set y <- 7 - 40", COMMANDS), ParseLine::Op {
             opline: OpLine {
-                command: Ascii::new("set"),
+                command_index: 3,
                 parameters: "y <- 7 - 40",
             },
             remainder: "",
         });
         assert_eq!(parse_line("\tset y <- 7 - 40", COMMANDS), ParseLine::Op {
             opline: OpLine {
-                command: Ascii::new("set"),
+                command_index: 3,
                 parameters: "y <- 7 - 40",
             },
             remainder: "",
         });
         assert_eq!(parse_line(" set    y <- 7 - 40", COMMANDS), ParseLine::Op {
             opline: OpLine {
-                command: Ascii::new("set"),
+                command_index: 3,
                 parameters: "y <- 7 - 40",
             },
             remainder: "",
@@ -265,7 +290,7 @@ mod tests {
     fn extra_space_around_parameter() {
         assert_eq!(parse_line("if   something = 99", COMMANDS), ParseLine::Op {
             opline: OpLine {
-                command: Ascii::new("if"),
+                command_index: 0,
                 parameters: "something = 99",
             },
             remainder: "",
@@ -273,10 +298,40 @@ mod tests {
 
         assert_eq!(parse_line("if\tsomething = 99\t ", COMMANDS), ParseLine::Op {
             opline: OpLine {
-                command: Ascii::new("if"),
+                command_index: 0,
                 parameters: "something = 99",
             },
             remainder: "",
         });
+    }
+
+    #[test]
+    fn extra_space_inside_command() {
+        assert_eq!(parse_line("else  if thing = other", COMMANDS), ParseLine::Op {
+            opline: OpLine {
+                command_index: 1,
+                parameters: "thing = other",
+            },
+            remainder: "",
+        });
+    }
+
+    #[test]
+    fn find_command_name() {
+        assert!(matches_command("set", "set"));
+        assert!(matches_command("set ", "set"));
+        assert!(matches_command(" set", "set"));
+        assert!(matches_command("\tset", "set"));
+
+        assert!(!matches_command("sdt", "set"));
+        assert!(!matches_command("set", "sdt"));
+        assert!(!matches_command("sett", "set"));
+        assert!(!matches_command("se t", "set"));
+
+        assert!(matches_command("end if", "end if"));
+        assert!(matches_command(" end if", "end if"));
+        assert!(matches_command("end if ", "end if"));
+        assert!(matches_command("end  if", "end if"));
+        assert!(matches_command("end\tif", "end if"));
     }
 }

@@ -1,4 +1,3 @@
-use unicase::Ascii;
 use crate::parse::ParseOp;
 use crate::register::{Instruction, OP_DONE};
 use crate::script::{Script, script_next, Environment};
@@ -6,9 +5,9 @@ use crate::script::{Script, script_next, Environment};
 pub fn compile(source: &str, instructions: &mut [Instruction]) -> Result<(), &'static str> {
     let mut script = Script::new(source);
     let commands = &[
-        Ascii::new("if"),
-        Ascii::new("end if"),
-        Ascii::new("set"),
+        "if",
+        "end if",
+        "set",
     ];
     let env = Environment::new(commands);
 
@@ -25,14 +24,11 @@ pub fn compile(source: &str, instructions: &mut [Instruction]) -> Result<(), &'s
 
         match parseop {
             ParseOp::Op(op) => {
-                if op.command == Ascii::new("if") {
-
-                } else if op.command == Ascii::new("end if") {
-
-                } else if op.command == Ascii::new("set") {
-
+                let ocommand = commands.get(op.command_index);
+                if let Some(&command) = ocommand {
+                    // TODO...
                 } else {
-                    return Err("unknown command");
+                    return Err("internal error: invalid command index");
                 }
             }
             ParseOp::Done => {
