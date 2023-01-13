@@ -1,6 +1,6 @@
 #![no_std]
 
-mod compile;
+pub mod compile;
 pub mod execute;
 mod parse;
 mod script;
