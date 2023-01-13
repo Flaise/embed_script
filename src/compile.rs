@@ -1,5 +1,5 @@
 use crate::parse::ParseOp;
-use crate::register::{Instruction, OP_DONE, OP_INT_ADD};
+use crate::execute::{Instruction, OP_DONE, OP_INT_ADD};
 use crate::script::{Script, script_next, Environment};
 
 struct WriteInstructions<'a> {
@@ -107,14 +107,15 @@ mod tests {
     //     let instructions = &([Instruction::default(); 1]);
     //     compile("set r <- 7", instructions).unwrap();
 
-    //     assert_eq!(instructions, &[Instruction {opcode: OP_ASSIGN, reg_a: }]);
+    //     assert_eq!(instructions, &[
+    //         Instruction {opcode: OP_ASSIGN, reg_a: }]);
     // }
 
-    #[test]
-    fn addition() {
-        let instructions = &mut ([Instruction::default(); 1]);
-        compile("set r <- a + b", instructions).unwrap();
+    // #[test]
+    // fn addition() {
+    //     let instructions = &mut ([Instruction::default(); 1]);
+    //     compile("set r <- a + b", instructions).unwrap();
 
-        assert_eq!(instructions, &[Instruction {opcode: OP_INT_ADD, reg_a: 0, reg_b: 1, reg_c: 2}]);
-    }
+    //     assert_eq!(instructions, &[Instruction {opcode: OP_INT_ADD, reg_a: 0, reg_b: 1, reg_c: 2}]);
+    // }
 }

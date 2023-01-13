@@ -2,6 +2,6 @@
 
 mod compile;
 mod parse;
-mod register;
+mod execute;
 mod script;
 mod version;
