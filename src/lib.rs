@@ -1,7 +1,7 @@
 #![no_std]
 
 mod compile;
+pub mod execute;
 mod parse;
-mod execute;
 mod script;
 mod version;

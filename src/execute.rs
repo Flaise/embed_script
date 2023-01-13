@@ -17,7 +17,8 @@ pub const OP_INT_EQ: u8 = 4;
 
 pub type Register = u32;
 
-fn execute(starting_instruction: usize, registers: &mut [Register], instructions: &[Instruction]) {
+pub fn execute(starting_instruction: usize, registers: &mut [Register], instructions: &[Instruction])
+-> Result<(), &'static str> {
     let mut index = starting_instruction;
     while index < instructions.len() {
         let inst = instructions[index];
@@ -47,11 +48,12 @@ fn execute(starting_instruction: usize, registers: &mut [Register], instructions
                     index += dist;
                 }
             }
-            _ => todo!(),
+            _ => return Err("invalid opcode"),
         }
 
         index += 1;
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -64,7 +66,7 @@ mod tests {
 
         execute(0, registers, &[
             Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1},
-        ]);
+        ]).unwrap();
 
         assert_eq!(registers, &[2, 3, 5]);
     }
@@ -77,7 +79,7 @@ mod tests {
             Instruction {opcode: OP_INT_EQ, reg_a: 3, reg_b: 0, reg_c: 1},
             Instruction {opcode: OP_JUMP_IF, reg_a: 3, reg_b: 0, reg_c: 1},
             Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1},
-        ]);
+        ]).unwrap();
 
         assert_eq!(registers, &[2, 3, 5, 0]);
     }
@@ -90,7 +92,7 @@ mod tests {
             Instruction {opcode: OP_INT_EQ, reg_a: 3, reg_b: 0, reg_c: 1},
             Instruction {opcode: OP_JUMP_IF, reg_a: 3, reg_b: 0, reg_c: 1},
             Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1},
-        ]);
+        ]).unwrap();
 
         assert_eq!(registers, &[3, 3, 0, 1]);
     }
