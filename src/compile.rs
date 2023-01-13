@@ -86,6 +86,8 @@ pub fn compile(source: &str, instructions: &mut [Instruction]) -> Result<(), &'s
 
 #[cfg(test)]
 mod tests {
+    use crate::execute::Register;
+
     use super::*;
 
     #[test]
@@ -104,11 +106,14 @@ mod tests {
 
     // #[test]
     // fn literal_assignment() {
-    //     let instructions = &([Instruction::default(); 1]);
-    //     compile("set r <- 7", instructions).unwrap();
+    //     let registers = &mut ([Register::default(); 2]);
+    //     let instructions = &mut ([Instruction::default(); 1]);
+    //     compile("set r <- 7", registers, instructions).unwrap();
 
     //     assert_eq!(instructions, &[
-    //         Instruction {opcode: OP_ASSIGN, reg_a: }]);
+    //         Instruction {opcode: OP_ASSIGN, reg_a: }
+    //         Instruction {opcode: OP_ASSIGN, reg_a: }
+    //     ]);
     // }
 
     // #[test]
