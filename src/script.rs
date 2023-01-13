@@ -51,9 +51,7 @@ mod tests {
 
     #[test]
     fn multiline() {
-        let mut script = Script {
-            source: "version 1\nevent um\nend event",
-        };
+        let mut script = Script::new("version 1\nevent um\nend event");
         assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 6, parameters: "1"}));
         assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 4, parameters: "um"}));
         assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 5, parameters: ""}));
@@ -61,9 +59,7 @@ mod tests {
 
     #[test]
     fn multi_whitespace() {
-        let mut script = Script {
-            source: "  version  1\n\nevent um\n\tend event",
-        };
+        let mut script = Script::new("  version  1\n\nevent um\n\tend event");
         assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 6, parameters: "1"}));
         assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 4, parameters: "um"}));
         assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 5, parameters: ""}));
@@ -71,18 +67,14 @@ mod tests {
 
     #[test]
     fn parse_error() {
-        let mut script = Script {
-            source: "version 1\ne vent um\nend event",
-        };
+        let mut script = Script::new("version 1\ne vent um\nend event");
         assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 6, parameters: "1"}));
         assert!(script_next(&mut script, ENV).is_err());
     }
 
     #[test]
     fn multi_windows() {
-        let mut script = Script {
-            source: "version 1\r\nevent um\r\nend event",
-        };
+        let mut script = Script::new("version 1\r\nevent um\r\nend event");
         assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 6, parameters: "1"}));
         assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 4, parameters: "um"}));
         assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 5, parameters: ""}));

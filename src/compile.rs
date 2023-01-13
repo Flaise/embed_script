@@ -25,16 +25,28 @@ enum DataType {
     U32,
 }
 
-#[derive(Copy, Clone, Default)]
-struct RegisterType<'a> {
-    name: &'a str,
+#[derive(Copy, Clone)]
+struct RegisterType {
+    name: [u8; 50],
+    name_len: u8,
     data_type: DataType,
     constant: bool,
 }
 
+impl Default for RegisterType {
+    fn default() -> Self {
+        RegisterType {
+            name: [0; 50],
+            name_len: Default::default(),
+            data_type: Default::default(),
+            constant: Default::default(),
+        }
+    }
+}
+
 struct WriteRegisters<'a, 'b> {
     pub inner: &'a mut [Register],
-    pub metadata: &'b mut [RegisterType<'b>],
+    pub metadata: &'b mut [RegisterType],
     pub next_variable: usize,
 }
 
@@ -54,8 +66,27 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
         Ok(id)
     }
 
-    pub fn write_variable(&mut self, value: u32) -> Result<u8, &'static str> {
-        self.write_register(value)
+    pub fn write_variable(&mut self, name: &str) -> Result<u8, &'static str> {
+        if name.contains(|c: char| c.is_whitespace()) {
+            return Err("a variable name can't contain spaces");
+        }
+        if name.len() > 50 {
+            return Err("a variable name must be 50 characters or less");
+        }
+
+        for i in 0..self.next_variable {
+            let meta = &self.metadata[i];
+            let current_name = &meta.name[..meta.name_len as usize];
+            if !meta.constant && current_name == name.as_bytes() {
+                return into_inst_index(i);
+            }
+        }
+
+        let id = self.write_register(0)?;
+        let meta = &mut self.metadata[id as usize];
+        meta.name[..name.as_bytes().len()].copy_from_slice(name.as_bytes());
+        meta.name_len = name.len() as u8;
+        Ok(id)
     }
 
     pub fn write_constant(&mut self, value: u32) -> Result<u8, &'static str> {
@@ -90,13 +121,10 @@ fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions: &mu
     if expression.len() == 0 {
         return Err("set command syntax is: set variable <- expression (missing expression)");
     }
-    if variable.contains(|c: char| c.is_whitespace()) {
-        return Err("a variable name can't contain spaces");
-    }
 
     let expr = expression.parse::<u32>().map_err(|_err| "u32 parse error")?;
 
-    let dest = registers.write_variable(0)?;
+    let dest = registers.write_variable(variable)?;
     let constant = registers.write_constant(expr)?;
 
     instructions.write(Instruction {opcode: OP_MOVE, reg_a: dest, reg_b: constant, reg_c: 0})
@@ -225,6 +253,19 @@ mod tests {
         assert_eq!(instructions, &[
             Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
             Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 1, reg_c: 0},
+        ]);
+    }
+
+    #[test]
+    fn assign_same_variable() {
+        let registers = &mut ([Register::default(); 3]);
+        let instructions = &mut ([Instruction::default(); 2]);
+        compile("set var <- 5\nset var <- 7", registers, instructions).unwrap();
+
+        assert_eq!(registers, &[0, 5, 7]);
+        assert_eq!(instructions, &[
+            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
+            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
         ]);
     }
 
