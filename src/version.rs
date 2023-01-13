@@ -57,7 +57,7 @@ mod tests {
 
     #[test]
     fn version_not_first() {
-        let script = &mut Script::new("set r <- 2\nversion 5");
+        let script = &mut Script::new("set r: 2\nversion 5");
         assert_eq!(pick_version(script), Err("'version' must be the first command in the script"));
     }
 }

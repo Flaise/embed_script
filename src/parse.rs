@@ -287,17 +287,17 @@ mod tests {
             },
             remainder: "",
         });
-        assert_eq!(parse_line("set r <- 20", COMMANDS), ParseLine::Op {
+        assert_eq!(parse_line("set r: 20", COMMANDS), ParseLine::Op {
             opline: OpLine {
                 command_index: 3,
-                parameters: "r <- 20",
+                parameters: "r: 20",
             },
             remainder: "",
         });
-        assert_eq!(parse_line("set y <- 7 - 40", COMMANDS), ParseLine::Op {
+        assert_eq!(parse_line("set y: 7 - 40", COMMANDS), ParseLine::Op {
             opline: OpLine {
                 command_index: 3,
-                parameters: "y <- 7 - 40",
+                parameters: "y: 7 - 40",
             },
             remainder: "",
         });
@@ -330,24 +330,24 @@ mod tests {
 
     #[test]
     fn indentation() {
-        assert_eq!(parse_line("    set y <- 7 - 40", COMMANDS), ParseLine::Op {
+        assert_eq!(parse_line("    set y: 7 - 40", COMMANDS), ParseLine::Op {
             opline: OpLine {
                 command_index: 3,
-                parameters: "y <- 7 - 40",
+                parameters: "y: 7 - 40",
             },
             remainder: "",
         });
-        assert_eq!(parse_line("\tset y <- 7 - 40", COMMANDS), ParseLine::Op {
+        assert_eq!(parse_line("\tset y: 7 - 40", COMMANDS), ParseLine::Op {
             opline: OpLine {
                 command_index: 3,
-                parameters: "y <- 7 - 40",
+                parameters: "y: 7 - 40",
             },
             remainder: "",
         });
-        assert_eq!(parse_line(" set    y <- 7 - 40", COMMANDS), ParseLine::Op {
+        assert_eq!(parse_line(" set    y: 7 - 40", COMMANDS), ParseLine::Op {
             opline: OpLine {
                 command_index: 3,
-                parameters: "y <- 7 - 40",
+                parameters: "y: 7 - 40",
             },
             remainder: "",
         });

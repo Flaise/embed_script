@@ -105,21 +105,21 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
 fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions: &mut WriteInstructions)
 -> Result<(), &'static str> {
 
-    let mut it = parameters.splitn(2, "<-");
+    let mut it = parameters.splitn(2, ":");
     let variable = it.next();
     let expression = it.next();
     let (variable, expression) = match (variable, expression) {
-        (None, _) => return Err("set command syntax is: set variable <- expression (missing <-)"),
-        (Some(_), None) => return Err("set command syntax is: set variable <- expression (missing expression)"),
+        (None, _) => return Err("set command syntax is: set variable: expression (missing :)"),
+        (Some(_), None) => return Err("set command syntax is: set variable: expression (missing expression)"),
         (Some(a), Some(b)) => (a, b),
     };
     let variable = variable.trim();
     let expression = expression.trim();
     if variable.len() == 0 {
-        return Err("set command syntax is: set variable <- expression (missing variable)");
+        return Err("set command syntax is: set variable: expression (missing variable)");
     }
     if expression.len() == 0 {
-        return Err("set command syntax is: set variable <- expression (missing expression)");
+        return Err("set command syntax is: set variable: expression (missing expression)");
     }
 
     let expr = expression.parse::<u32>().map_err(|_err| "u32 parse error")?;
@@ -227,7 +227,7 @@ mod tests {
     fn literal_assignment() {
         let registers = &mut ([Register::default(); 2]);
         let instructions = &mut ([Instruction::default(); 1]);
-        compile("set r <- 7", registers, instructions).unwrap();
+        compile("set r: 7", registers, instructions).unwrap();
 
         assert_eq!(registers, &[0, 7]);
         assert_eq!(instructions, &[Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0}]);
@@ -237,7 +237,7 @@ mod tests {
     fn literal_assignment_2() {
         let registers = &mut ([Register::default(); 2]);
         let instructions = &mut ([Instruction::default(); 1]);
-        compile("set h <- 6", registers, instructions).unwrap();
+        compile("set h: 6", registers, instructions).unwrap();
 
         assert_eq!(registers, &[0, 6]);
         assert_eq!(instructions, &[Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0}]);
@@ -247,7 +247,7 @@ mod tests {
     fn assign_same_constant() {
         let registers = &mut ([Register::default(); 3]);
         let instructions = &mut ([Instruction::default(); 2]);
-        compile("set h <- 5\nset r <- 5", registers, instructions).unwrap();
+        compile("set h: 5\nset r: 5", registers, instructions).unwrap();
 
         assert_eq!(registers, &[0, 5, 0]);
         assert_eq!(instructions, &[
@@ -260,7 +260,7 @@ mod tests {
     fn assign_same_variable() {
         let registers = &mut ([Register::default(); 3]);
         let instructions = &mut ([Instruction::default(); 2]);
-        compile("set var <- 5\nset var <- 7", registers, instructions).unwrap();
+        compile("set var: 5\nset var: 7", registers, instructions).unwrap();
 
         assert_eq!(registers, &[0, 5, 7]);
         assert_eq!(instructions, &[
@@ -272,7 +272,7 @@ mod tests {
     // #[test]
     // fn addition() {
     //     let instructions = &mut ([Instruction::default(); 1]);
-    //     compile("set r <- a + b", instructions).unwrap();
+    //     compile("set r: a + b", instructions).unwrap();
 
     //     assert_eq!(instructions, &[Instruction {opcode: OP_INT_ADD, reg_a: 0, reg_b: 1, reg_c: 2}]);
     // }
