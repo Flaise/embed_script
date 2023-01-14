@@ -20,11 +20,6 @@ impl<'a> Token<'a> {
     }
 }
 
-pub struct Tokenizer<'a> {
-    source: &'a [u8],
-    in_command: bool,
-}
-
 pub fn tokenize<'a>(source: &'a str) -> Tokenizer<'a> {
     Tokenizer {
         source: source.as_bytes(),
@@ -32,11 +27,31 @@ pub fn tokenize<'a>(source: &'a str) -> Tokenizer<'a> {
     }
 }
 
+fn classify_segment<'a>(segment: &'a str, found_decimal: bool) -> Token<'a> {
+    if found_decimal {
+        match segment.parse::<f32>() {
+            Err(_todo) => {}
+            Ok(val) => return Token::Float(val),
+        }
+    }
+    match segment.parse::<i32>() {
+        Err(_todo) => {}
+        Ok(val) => return Token::Integer(val),
+    }
+    Token::Identifier(segment)
+}
+
+pub struct Tokenizer<'a> {
+    source: &'a [u8],
+    in_command: bool,
+}
+
 impl<'a> Tokenizer<'a> {
     pub fn next(&mut self) -> Token<'a> {
         let mut last_index = 0;
         let mut in_whitespace = false;
         let mut found_tab = false;
+        let mut found_decimal = false;
 
         loop {
             let c = self.source.get(last_index).cloned();
@@ -52,23 +67,27 @@ impl<'a> Tokenizer<'a> {
                     }
 
                     if in_whitespace {
-                        last_index += 1;
-                        let (_whitespace, remainder) = self.source.split_at(last_index);
-                        self.source = remainder;
+                        self.source = &self.source[last_index + 1..];
                         last_index = 0;
                     } else {
                         let (result, remainder) = self.source.split_at(last_index);
                         self.source = remainder;
-                        return Token::Identifier(from_utf8(result).unwrap());
+                        let result = from_utf8(result).unwrap();
+
+                        return classify_segment(result, found_decimal);
                     }
                 } else {
-                    // visible symbol
+                    // visible glyph
 
                     if self.in_command && found_tab {
                         return Token::Err(()); // TODO
                     } else {
                         found_tab = false;
                         self.in_command = true;
+                    }
+
+                    if c == b'.' {
+                        found_decimal = true;
                     }
 
                     if in_whitespace {
@@ -87,9 +106,10 @@ impl<'a> Tokenizer<'a> {
                 } else if last_index == 0 {
                     return Token::Done;
                 } else {
-                    let result = Token::Identifier(from_utf8(&self.source[..last_index]).unwrap());
+                    let result = from_utf8(&self.source[..last_index]).unwrap();
                     self.source = &self.source[0..0];
-                    return result;
+
+                    return classify_segment(result, found_decimal);
                 }
             }
         }
@@ -198,6 +218,89 @@ mod tests {
         assert_eq!(tokenizer.next(), Token::Symbol("+"));
         assert_eq!(tokenizer.next(), Token::Integer(1));
         assert_eq!(tokenizer.next(), Token::Done);
+    }
+
+    #[test]
+    fn integers() {
+        let mut tokenizer = tokenize("1");
+        assert_eq!(tokenizer.next(), Token::Integer(1));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize("2");
+        assert_eq!(tokenizer.next(), Token::Integer(2));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize("-100");
+        assert_eq!(tokenizer.next(), Token::Integer(-100));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize("2000000");
+        assert_eq!(tokenizer.next(), Token::Integer(2000000));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize("0");
+        assert_eq!(tokenizer.next(), Token::Integer(0));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize("-0"); // weird but ok
+        assert_eq!(tokenizer.next(), Token::Integer(0));
+        assert_eq!(tokenizer.next(), Token::Done);
+    }
+
+    #[test]
+    fn fractional_numbers() {
+        let mut tokenizer = tokenize("1.0");
+        assert_eq!(tokenizer.next(), Token::Float(1.0));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize("2.0");
+        assert_eq!(tokenizer.next(), Token::Float(2.0));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize("-3.0");
+        assert_eq!(tokenizer.next(), Token::Float(-3.0));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize("0.125");
+        assert_eq!(tokenizer.next(), Token::Float(0.125));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize("0.0");
+        assert_eq!(tokenizer.next(), Token::Float(0.0));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize(".5"); // sloppy but ok
+        assert_eq!(tokenizer.next(), Token::Float(0.5));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize("-0.0"); // weird but ok
+        assert_eq!(tokenizer.next(), Token::Float(0.0));
+        assert_eq!(tokenizer.next(), Token::Done);
+    }
+
+    #[test]
+    fn bad_floats() {
+        let mut tokenizer = tokenize("1."); // nah
+        assert!(tokenizer.next().is_err());
+
+        let mut tokenizer = tokenize("."); // no digits???
+        assert_eq!(tokenizer.next(), Token::Symbol("."));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize("1.1.");
+        assert!(tokenizer.next().is_err());
+
+        let mut tokenizer = tokenize(".1.1");
+        assert!(tokenizer.next().is_err());
+
+        let mut tokenizer = tokenize("1..1");
+        assert!(tokenizer.next().is_err());
+
+        let mut tokenizer = tokenize("..1");
+        assert!(tokenizer.next().is_err());
+
+        let mut tokenizer = tokenize("1..");
+        assert!(tokenizer.next().is_err());
     }
 
 }
