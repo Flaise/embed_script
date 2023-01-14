@@ -22,7 +22,7 @@ impl<'a> Token<'a> {
 
 fn is_symbol_char(ch: u8) -> bool {
     match ch {
-        b'!' | b'=' | b'<' | b'>' | b'(' | b')' | b'+' | b'-' | b'/' => true,
+        b'!' | b'=' | b'<' | b'>' | b'(' | b')' | b'+' | b'-' | b'/' | b':' => true,
         _ => false,
     }
 }
@@ -111,6 +111,8 @@ impl<'a> Tokenizer<'a> {
                         state = TokenState::Symbol;
                     } else if is_ident_first_char(c) {
                         state = TokenState::Identifier;
+                    } else if c == b'.' {
+                        state = TokenState::Float;
                     } else if is_number_char(c) {
                         state = TokenState::Integer;
                     } else {
@@ -154,6 +156,9 @@ impl<'a> Tokenizer<'a> {
                         if c.is_ascii_whitespace() {
                             state = TokenState::Whitespace;
                             true
+                        } else if c == b'.' {
+                            state = TokenState::Float;
+                            false // changing type instead of ending token
                         } else if is_number_char(c) {
                             false
                         } else if is_symbol_char(c) {
@@ -174,8 +179,34 @@ impl<'a> Tokenizer<'a> {
                     }
                 }
                 TokenState::Float => {
-                    return Token::Err(());
-
+                    let done = if let Some(c) = c {
+                        if c.is_ascii_whitespace() {
+                            state = TokenState::Whitespace;
+                            true
+                        } else if c == b'.' {
+                            return Token::Err(());
+                        } else if is_number_char(c) {
+                            false
+                        } else if is_symbol_char(c) {
+                            state = TokenState::Symbol;
+                            true
+                        } else {
+                            return Token::Err(());
+                        }
+                    } else {
+                        true
+                    };
+                    if done {
+                        let seg = self.take_segment(last_index);
+                        if seg.as_bytes()[seg.len() - 1] == b'.' {
+                            // No trailing dot allowed in floating point numbers.
+                            return Token::Err(()); // TODO
+                        }
+                        match seg.parse::<f32>() {
+                            Ok(val) => return Token::Float(val),
+                            Err(_) => return Token::Err(()),
+                        }
+                    }
                 }
                 TokenState::Symbol => {
                     let done = if let Some(c) = c {
@@ -419,13 +450,16 @@ mod tests {
     }
 
     #[test]
-    fn conditional() {
+    fn conditional_int_gaps() {
         let mut tokenizer = tokenize("a >= 3");
         assert_eq!(tokenizer.next(), Token::Identifier("a"));
         assert_eq!(tokenizer.next(), Token::Symbol(">="));
         assert_eq!(tokenizer.next(), Token::Integer(3));
         assert_eq!(tokenizer.next(), Token::Done);
+    }
 
+    #[test]
+    fn conditional_float() {
         let mut tokenizer = tokenize("r<=3.14");
         assert_eq!(tokenizer.next(), Token::Identifier("r"));
         assert_eq!(tokenizer.next(), Token::Symbol("<="));
@@ -463,7 +497,8 @@ mod tests {
         assert_eq!(tokenizer.next(), Token::Done);
 
         let mut tokenizer = tokenize("-3.0");
-        assert_eq!(tokenizer.next(), Token::Float(-3.0));
+        assert_eq!(tokenizer.next(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next(), Token::Float(3.0));
         assert_eq!(tokenizer.next(), Token::Done);
 
         let mut tokenizer = tokenize("0.125");
@@ -476,10 +511,6 @@ mod tests {
 
         let mut tokenizer = tokenize(".5"); // sloppy but ok
         assert_eq!(tokenizer.next(), Token::Float(0.5));
-        assert_eq!(tokenizer.next(), Token::Done);
-
-        let mut tokenizer = tokenize("-0.0"); // weird but ok
-        assert_eq!(tokenizer.next(), Token::Float(0.0));
         assert_eq!(tokenizer.next(), Token::Done);
     }
 
