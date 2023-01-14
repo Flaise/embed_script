@@ -3,7 +3,7 @@
 pub enum ScriptError {
     UnknownCommand,
     NonAsciiCharacter,
-    TabAfterCommand,
+    TabInCommand,
 }
 pub use self::ScriptError::*;
 
@@ -12,7 +12,7 @@ impl ScriptError {
         match self {
             UnknownCommand => "unknown command",
             NonAsciiCharacter => "invalid symbol/character found",
-            TabAfterCommand => "can't have a tab between the command and its parameters because that's a potential point of confusion",
+            TabInCommand => "can't have a tab between the command and its parameters because that's a potential point of confusion",
         }
     }
 }
@@ -216,7 +216,7 @@ pub fn parse_line<'a, 'b>(mut program: &'a str, commands: &'b [&str])
                                 break;
                             }
                             if c == b'\t' {
-                                return ParseLine::Err(ScriptError::TabAfterCommand);
+                                return ParseLine::Err(ScriptError::TabInCommand);
                             }
                         }
 

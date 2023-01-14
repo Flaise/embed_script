@@ -20,25 +20,49 @@ impl<'a> Token<'a> {
     }
 }
 
+fn is_symbol_char(ch: u8) -> bool {
+    match ch {
+        b'!' | b'=' | b'<' | b'>' | b'(' | b')' | b'+' | b'-' | b'/' => true,
+        _ => false,
+    }
+}
+
+fn is_ident_char(ch: u8) -> bool {
+    match ch {
+        b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' => true,
+        _ => false,
+    }
+}
+
+fn is_ident_first_char(ch: u8) -> bool {
+    match ch {
+        b'a'..=b'z' | b'A'..=b'Z' | b'_' => true,
+        _ => false,
+    }
+}
+
+fn is_number_char(ch: u8) -> bool {
+    match ch {
+        b'0'..=b'9' | b'.' => true,
+        _ => false,
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum TokenState {
+    Initial,
+    Whitespace,
+    Identifier,
+    Integer,
+    Float,
+    Symbol,
+}
+
 pub fn tokenize<'a>(source: &'a str) -> Tokenizer<'a> {
     Tokenizer {
         source: source.as_bytes(),
         in_command: false,
     }
-}
-
-fn classify_segment<'a>(segment: &'a str, found_decimal: bool) -> Token<'a> {
-    if found_decimal {
-        match segment.parse::<f32>() {
-            Err(_todo) => {}
-            Ok(val) => return Token::Float(val),
-        }
-    }
-    match segment.parse::<i32>() {
-        Err(_todo) => {}
-        Ok(val) => return Token::Integer(val),
-    }
-    Token::Identifier(segment)
 }
 
 pub struct Tokenizer<'a> {
@@ -47,70 +71,163 @@ pub struct Tokenizer<'a> {
 }
 
 impl<'a> Tokenizer<'a> {
+    fn take_segment(&mut self, index: usize) -> &'a str {
+        let result = from_utf8(&self.source[..index]).unwrap();
+        self.source = &self.source[index..];
+        result
+    }
+
     pub fn next(&mut self) -> Token<'a> {
         let mut last_index = 0;
-        let mut in_whitespace = false;
         let mut found_tab = false;
-        let mut found_decimal = false;
+        let mut state = TokenState::Initial;
 
         loop {
-
-            // end of input
-            if last_index >= self.source.len() {
-                if in_whitespace {
-                    return Token::Done;
-                } else if last_index == 0 {
-                    return Token::Done;
-                } else {
-                    let result = from_utf8(&self.source[..last_index]).unwrap();
-                    self.source = &self.source[0..0];
-
-                    return classify_segment(result, found_decimal);
-                }
-            }
-
-            let c = self.source[last_index];
-            if c.is_ascii_whitespace() {
-                if c == b'\t' {
-                    found_tab = true;
-                }
-
-                if last_index == 0 {
-                    in_whitespace = true;
-                }
-
-                if in_whitespace {
-                    self.source = &self.source[last_index + 1..];
-                    last_index = 0;
-                } else {
-                    let (result, remainder) = self.source.split_at(last_index);
-                    self.source = remainder;
-                    let result = from_utf8(result).unwrap();
-
-                    return classify_segment(result, found_decimal);
-                }
-            } else {
-                // visible glyph
-
-                if self.in_command && found_tab {
+            let c = self.source.get(last_index).cloned();
+            if let Some(c) = c {
+                if !c.is_ascii() {
                     return Token::Err(()); // TODO
-                } else {
-                    found_tab = false;
-                    self.in_command = true;
-                }
-
-                if c == b'.' {
-                    found_decimal = true;
-                }
-
-                if in_whitespace {
-                    in_whitespace = false;
-                    self.source = &self.source[last_index..];
-                    last_index = 0;
-                } else {
-                    last_index += 1;
                 }
             }
+
+            if state != TokenState::Initial && state != TokenState::Whitespace {
+                self.in_command = true;
+            }
+
+            match state {
+                TokenState::Initial => {
+                    let c = if let Some(c) = c {
+                        c
+                    } else {
+                        return Token::Done;
+                    };
+
+                    if c.is_ascii_whitespace() {
+                        if c == b'\t' {
+                            found_tab = true;
+                        }
+                        state = TokenState::Whitespace;
+                    } else if is_symbol_char(c) {
+                        state = TokenState::Symbol;
+                    } else if is_ident_first_char(c) {
+                        state = TokenState::Identifier;
+                    } else if is_number_char(c) {
+                        state = TokenState::Integer;
+                    } else {
+                        return Token::Err(()); // TODO
+                    }
+                }
+                TokenState::Whitespace => {
+                    let c = if let Some(c) = c {
+                        c
+                    } else {
+                        return Token::Done;
+                    };
+
+                    if c.is_ascii_whitespace() {
+                        if c == b'\t' {
+                            found_tab = true;
+                        }
+                    } else {
+                        if self.in_command && found_tab {
+                            return Token::Err(()); // TODO
+                        } else {
+                            found_tab = false;
+                            self.in_command = true;
+                        }
+                        self.source = &self.source[last_index..];
+                        last_index = 0;
+
+                        if is_ident_first_char(c) {
+                            state = TokenState::Identifier;
+                        } else if is_number_char(c) {
+                            state = TokenState::Integer
+                        } else if is_symbol_char(c) {
+                            state = TokenState::Symbol;
+                        } else {
+                            return Token::Err(()); // TODO
+                        }
+                    }
+                }
+                TokenState::Integer => {
+                    let done = if let Some(c) = c {
+                        if c.is_ascii_whitespace() {
+                            state = TokenState::Whitespace;
+                            true
+                        } else if is_number_char(c) {
+                            false
+                        } else if is_symbol_char(c) {
+                            state = TokenState::Symbol;
+                            true
+                        } else {
+                            return Token::Err(());
+                        }
+                    } else {
+                        true
+                    };
+                    if done {
+                        let seg = self.take_segment(last_index);
+                        match seg.parse::<i32>() {
+                            Ok(val) => return Token::Integer(val),
+                            Err(_) => return Token::Err(()),
+                        }
+                    }
+                }
+                TokenState::Float => {
+                    return Token::Err(());
+
+                }
+                TokenState::Symbol => {
+                    let done = if let Some(c) = c {
+                        if c.is_ascii_whitespace() {
+                            state = TokenState::Whitespace;
+                            true
+                        } else if is_ident_char(c) {
+                            state = TokenState::Identifier;
+                            true
+                        } else if is_symbol_char(c) {
+                            false
+                        } else {
+                            return Token::Err(());
+                        }
+                    } else {
+                        true
+                    };
+                    if done {
+                        let seg = self.take_segment(last_index);
+
+                        if cfg!(debug_assertions) {
+                            for c in seg.bytes() {
+                                debug_assert!(is_symbol_char(c));
+                            }
+                        }
+
+                        return Token::Symbol(seg);
+                    }
+                }
+                TokenState::Identifier => {
+                    let done = if let Some(c) = c {
+                        if c.is_ascii_whitespace() {
+                            state = TokenState::Whitespace;
+                            true
+                        } else if is_ident_char(c) {
+                            false
+                        } else if is_symbol_char(c) {
+                            state = TokenState::Symbol;
+                            true
+                        } else {
+                            return Token::Err(());
+                        }
+                    } else {
+                        true
+                    };
+                    if done {
+                        let seg = self.take_segment(last_index);
+                        return Token::Identifier(seg);
+                    }
+                }
+            }
+            last_index += 1;
         }
     }
 }
@@ -124,6 +241,7 @@ mod tests {
         let mut tokenizer = tokenize("one");
         assert_eq!(tokenizer.next(), Token::Identifier("one"));
         assert_eq!(tokenizer.next(), Token::Done);
+        assert_eq!(tokenizer.next(), Token::Done);
     }
 
     #[test]
@@ -131,6 +249,7 @@ mod tests {
         let mut tokenizer = tokenize("one two");
         assert_eq!(tokenizer.next(), Token::Identifier("one"));
         assert_eq!(tokenizer.next(), Token::Identifier("two"));
+        assert_eq!(tokenizer.next(), Token::Done);
         assert_eq!(tokenizer.next(), Token::Done);
     }
 
@@ -159,19 +278,28 @@ mod tests {
     }
 
     #[test]
-    fn leading_trailing_tabs_ok() {
+    fn leading_tabs_ok() {
         let mut tokenizer = tokenize("\tone");
         assert_eq!(tokenizer.next(), Token::Identifier("one"));
         assert_eq!(tokenizer.next(), Token::Done);
+    }
 
+    #[test]
+    fn trailing_tabs_ok() {
         let mut tokenizer = tokenize("one\t");
         assert_eq!(tokenizer.next(), Token::Identifier("one"));
         assert_eq!(tokenizer.next(), Token::Done);
+    }
 
+    #[test]
+    fn surrounded_by_tabs() {
         let mut tokenizer = tokenize("\tone\t");
         assert_eq!(tokenizer.next(), Token::Identifier("one"));
         assert_eq!(tokenizer.next(), Token::Done);
+    }
 
+    #[test]
+    fn no_tabs_between_tokens() {
         let mut tokenizer = tokenize("\tone two\t");
         assert_eq!(tokenizer.next(), Token::Identifier("one"));
         assert_eq!(tokenizer.next(), Token::Identifier("two"));
@@ -183,7 +311,10 @@ mod tests {
         let mut tokenizer = tokenize("one\ttwo");
         assert_eq!(tokenizer.next(), Token::Identifier("one"));
         assert!(tokenizer.next().is_err());
+    }
 
+    #[test]
+    fn internal_tab_and_space_bad() {
         let mut tokenizer = tokenize("one \ttwo");
         assert_eq!(tokenizer.next(), Token::Identifier("one"));
         assert!(tokenizer.next().is_err());
@@ -196,11 +327,70 @@ mod tests {
         assert_eq!(tokenizer.next(), Token::Symbol("+"));
         assert_eq!(tokenizer.next(), Token::Identifier("two"));
         assert_eq!(tokenizer.next(), Token::Done);
+    }
 
+    #[test]
+    fn infix_spaces() {
         let mut tokenizer = tokenize("one + two");
         assert_eq!(tokenizer.next(), Token::Identifier("one"));
         assert_eq!(tokenizer.next(), Token::Symbol("+"));
         assert_eq!(tokenizer.next(), Token::Identifier("two"));
+        assert_eq!(tokenizer.next(), Token::Done);
+    }
+
+    #[test]
+    fn binary_minus() {
+        let mut tokenizer = tokenize("one-two");
+        assert_eq!(tokenizer.next(), Token::Identifier("one"));
+        assert_eq!(tokenizer.next(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next(), Token::Identifier("two"));
+        assert_eq!(tokenizer.next(), Token::Done);
+    }
+
+    #[test]
+    fn binary_minus_spaces() {
+        let mut tokenizer = tokenize("one - two");
+        assert_eq!(tokenizer.next(), Token::Identifier("one"));
+        assert_eq!(tokenizer.next(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next(), Token::Identifier("two"));
+        assert_eq!(tokenizer.next(), Token::Done);
+    }
+
+    #[test]
+    fn integer_minus_spaces() {
+        let mut tokenizer = tokenize("1 - 2");
+        assert_eq!(tokenizer.next(), Token::Integer(1));
+        assert_eq!(tokenizer.next(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next(), Token::Integer(2));
+        assert_eq!(tokenizer.next(), Token::Done);
+    }
+
+    #[test]
+    fn prefix_minus_space() {
+        let mut tokenizer = tokenize(" - one");
+        assert_eq!(tokenizer.next(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next(), Token::Identifier("one"));
+        assert_eq!(tokenizer.next(), Token::Done);
+    }
+
+    #[test]
+    fn prefix_minus() {
+        let mut tokenizer = tokenize("-one");
+        assert_eq!(tokenizer.next(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next(), Token::Identifier("one"));
+        assert_eq!(tokenizer.next(), Token::Done);
+    }
+
+    #[test]
+    fn prefix_minus_digits() {
+        let mut tokenizer = tokenize(" - 1");
+        assert_eq!(tokenizer.next(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next(), Token::Integer(1));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize(" -- 1");
+        assert_eq!(tokenizer.next(), Token::Symbol("--"));
+        assert_eq!(tokenizer.next(), Token::Integer(1));
         assert_eq!(tokenizer.next(), Token::Done);
     }
 
@@ -229,6 +419,21 @@ mod tests {
     }
 
     #[test]
+    fn conditional() {
+        let mut tokenizer = tokenize("a >= 3");
+        assert_eq!(tokenizer.next(), Token::Identifier("a"));
+        assert_eq!(tokenizer.next(), Token::Symbol(">="));
+        assert_eq!(tokenizer.next(), Token::Integer(3));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize("r<=3.14");
+        assert_eq!(tokenizer.next(), Token::Identifier("r"));
+        assert_eq!(tokenizer.next(), Token::Symbol("<="));
+        assert_eq!(tokenizer.next(), Token::Float(3.14));
+        assert_eq!(tokenizer.next(), Token::Done);
+    }
+
+    #[test]
     fn integers() {
         let mut tokenizer = tokenize("1");
         assert_eq!(tokenizer.next(), Token::Integer(1));
@@ -238,19 +443,11 @@ mod tests {
         assert_eq!(tokenizer.next(), Token::Integer(2));
         assert_eq!(tokenizer.next(), Token::Done);
 
-        let mut tokenizer = tokenize("-100");
-        assert_eq!(tokenizer.next(), Token::Integer(-100));
-        assert_eq!(tokenizer.next(), Token::Done);
-
         let mut tokenizer = tokenize("2000000");
         assert_eq!(tokenizer.next(), Token::Integer(2000000));
         assert_eq!(tokenizer.next(), Token::Done);
 
         let mut tokenizer = tokenize("0");
-        assert_eq!(tokenizer.next(), Token::Integer(0));
-        assert_eq!(tokenizer.next(), Token::Done);
-
-        let mut tokenizer = tokenize("-0"); // weird but ok
         assert_eq!(tokenizer.next(), Token::Integer(0));
         assert_eq!(tokenizer.next(), Token::Done);
     }
@@ -292,8 +489,7 @@ mod tests {
         assert!(tokenizer.next().is_err());
 
         let mut tokenizer = tokenize("."); // no digits???
-        assert_eq!(tokenizer.next(), Token::Symbol("."));
-        assert_eq!(tokenizer.next(), Token::Done);
+        assert!(tokenizer.next().is_err());
 
         let mut tokenizer = tokenize("1.1.");
         assert!(tokenizer.next().is_err());
