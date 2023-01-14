@@ -3,6 +3,7 @@
 pub enum ScriptError {
     UnknownCommand,
     NonAsciiCharacter,
+    TabAfterCommand,
 }
 pub use self::ScriptError::*;
 
@@ -11,6 +12,7 @@ impl ScriptError {
         match self {
             UnknownCommand => "unknown command",
             NonAsciiCharacter => "invalid symbol/character found",
+            TabAfterCommand => "can't have a tab between the command and its parameters because that's a potential point of confusion",
         }
     }
 }
@@ -96,6 +98,7 @@ fn next_line(program: &str) -> Progress {
     return Progress::Next {line, remainder};
 }
 
+#[cfg(test)]
 fn matches_command(line: &str, check: &str) -> bool {
     match_command(line, check).is_some()
 }
@@ -206,6 +209,16 @@ pub fn parse_line<'a, 'b>(mut program: &'a str, commands: &'b [&str])
                 for (command_index, &command) in commands.iter().enumerate() {
                     if let Some(matched) = match_command(line, command) {
                         let mut parameters = &line[matched.len()..];
+
+                        // all bytes until non-whitespace
+                        for &c in parameters.as_bytes() {
+                            if !c.is_ascii_whitespace() {
+                                break;
+                            }
+                            if c == b'\t' {
+                                return ParseLine::Err(ScriptError::TabAfterCommand);
+                            }
+                        }
 
                         // first space was necessary to separate command from parameters
                         if let Some(&c) = parameters.as_bytes().get(0) {
@@ -370,7 +383,7 @@ mod tests {
             remainder: "",
         });
 
-        assert_eq!(parse_line("if\tsomething = 99\t ", COMMANDS), ParseLine::Op {
+        assert_eq!(parse_line("if something = 99\t ", COMMANDS), ParseLine::Op {
             opline: OpLine {
                 command_index: 0,
                 parameters: "something = 99",
@@ -418,5 +431,24 @@ mod tests {
     #[test]
     fn slice_command_name() {
         assert_eq!(match_command("  end  if ", "end if"), Some("  end  if"));
+    }
+
+    #[test]
+    fn tab_after_command_bad() {
+        assert!(parse_line("else if\tthing = other", COMMANDS).is_err());
+        assert!(parse_line("else if \tthing = other", COMMANDS).is_err());
+        assert!(parse_line("else if\t thing = other", COMMANDS).is_err());
+        assert!(parse_line("else if\t\tthing = other", COMMANDS).is_err());
+    }
+
+    #[test]
+    fn trailing_tab_ok() {
+        assert_eq!(parse_line("end if\t", COMMANDS), ParseLine::Op {
+            opline: OpLine {
+                command_index: 2,
+                parameters: "",
+            },
+            remainder: "",
+        });
     }
 }
