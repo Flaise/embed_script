@@ -109,17 +109,17 @@ fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions: &mu
     let variable = it.next();
     let expression = it.next();
     let (variable, expression) = match (variable, expression) {
-        (None, _) => return Err("set command syntax is: set variable: expression (missing :)"),
-        (Some(_), None) => return Err("set command syntax is: set variable: expression (missing expression)"),
+        (None, _) => return Err("set command syntax is    set variable: expression    (missing :)"),
+        (Some(_), None) => return Err("set command syntax is    set variable: expression    (missing expression)"),
         (Some(a), Some(b)) => (a, b),
     };
     let variable = variable.trim();
     let expression = expression.trim();
     if variable.len() == 0 {
-        return Err("set command syntax is: set variable: expression (missing variable)");
+        return Err("set command syntax is    set variable: expression    (missing variable)");
     }
     if expression.len() == 0 {
-        return Err("set command syntax is: set variable: expression (missing expression)");
+        return Err("set command syntax is    set variable: expression    (missing expression)");
     }
 
     let expr = expression.parse::<u32>().map_err(|_err| "u32 parse error")?;

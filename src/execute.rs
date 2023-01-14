@@ -10,22 +10,36 @@ pub struct Instruction {
 pub const OP_DONE: u8 = 1;
 /// A <- B
 pub const OP_MOVE: u8 = 2;
-/// if A != 0 then jump ([B C] into u16 big endian)
-pub const OP_JUMP_IF: u8 = 3;
+/// if B == C then jump A
+pub const OP_INT_EQ: u8 = 3;
+/// if B <= C then jump A
+pub const OP_INT_LE: u8 = 4;
+/// if B < C then jump A
+pub const OP_INT_LT: u8 = 5;
+// /// jump ([A B C] as u24 BE)
+// pub const OP_JUMP: u8 = 6;
 /// A <- B + C
-pub const OP_INT_ADD: u8 = 4;
-/// A <- B = C
-pub const OP_INT_EQ: u8 = 5;
+pub const OP_INT_ADD: u8 = 7;
 
 pub type Register = u32;
 
+fn validate_branch(inst_len: usize, counter: usize, reg_a: u8) -> Result<(), &'static str> {
+    debug_assert!(inst_len > counter);
+    if reg_a == 0 {
+        return Err("comparison requires nonzero value in operand A");
+    }
+    if inst_len - counter - 1 < reg_a as usize {
+        return Err("program counter out of bounds");
+    }
+    Ok(())
+}
+
 pub fn execute(starting_instruction: usize, registers: &mut [Register], instructions: &[Instruction])
 -> Result<(), &'static str> {
-    let mut index = starting_instruction;
-    while index < instructions.len() {
-        let inst = instructions[index];
+    let mut counter = starting_instruction;
+    while counter < instructions.len() {
+        let inst = instructions[counter];
 
-        let av = registers[inst.reg_a as usize];
         let bv = registers[inst.reg_b as usize];
         let cv = registers[inst.reg_c as usize];
 
@@ -42,22 +56,27 @@ pub fn execute(starting_instruction: usize, registers: &mut [Register], instruct
                 }
             }
             OP_INT_EQ => {
+                validate_branch(instructions.len(), counter, inst.reg_a)?;
                 if bv == cv {
-                    registers[inst.reg_a as usize] = 1;
-                } else {
-                    registers[inst.reg_a as usize] = 0;
+                    counter += inst.reg_a as usize;
                 }
             }
-            OP_JUMP_IF => {
-                if av != 0 {
-                    let dist = u16::from_be_bytes([inst.reg_b, inst.reg_c]) as usize;
-                    index += dist;
+            OP_INT_LE => {
+                validate_branch(instructions.len(), counter, inst.reg_a)?;
+                if bv <= cv {
+                    counter += inst.reg_a as usize;
+                }
+            }
+            OP_INT_LT => {
+                validate_branch(instructions.len(), counter, inst.reg_a)?;
+                if bv < cv {
+                    counter += inst.reg_a as usize;
                 }
             }
             _ => return Err("invalid opcode"),
         }
 
-        index += 1;
+        counter += 1;
     }
     Ok(())
 }
@@ -94,27 +113,35 @@ mod tests {
 
     #[test]
     fn jump_eq_false() {
-        let registers = &mut [2, 3, 0, 0];
+        let registers = &mut [2, 3, 0];
 
         execute(0, registers, &[
-            Instruction {opcode: OP_INT_EQ, reg_a: 3, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_JUMP_IF, reg_a: 3, reg_b: 0, reg_c: 1},
+            Instruction {opcode: OP_INT_EQ, reg_a: 1, reg_b: 0, reg_c: 1},
             Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1},
         ]).unwrap();
 
-        assert_eq!(registers, &[2, 3, 5, 0]);
+        assert_eq!(registers, &[2, 3, 5]);
     }
 
     #[test]
     fn jump_eq_true() {
-        let registers = &mut [3, 3, 0, 0];
+        let registers = &mut [3, 3, 0];
 
         execute(0, registers, &[
-            Instruction {opcode: OP_INT_EQ, reg_a: 3, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_JUMP_IF, reg_a: 3, reg_b: 0, reg_c: 1},
+            Instruction {opcode: OP_INT_EQ, reg_a: 1, reg_b: 0, reg_c: 1},
             Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1},
         ]).unwrap();
 
-        assert_eq!(registers, &[3, 3, 0, 1]);
+        assert_eq!(registers, &[3, 3, 0]);
+    }
+
+    #[test]
+    fn jump_eq_overrun() {
+        let registers = &mut [3, 3, 0];
+
+        execute(0, registers, &[
+            Instruction {opcode: OP_INT_EQ, reg_a: 2, reg_b: 0, reg_c: 1},
+            Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1},
+        ]).unwrap_err();
     }
 }
