@@ -1,6 +1,5 @@
 use core::str::from_utf8;
 
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token<'a> {
     Done,
@@ -23,14 +22,12 @@ impl<'a> Token<'a> {
 
 pub struct Tokenizer<'a> {
     source: &'a [u8],
-    // in_whitespace: bool,
     in_command: bool,
 }
 
 pub fn tokenize<'a>(source: &'a str) -> Tokenizer<'a> {
     Tokenizer {
         source: source.as_bytes(),
-        // in_whitespace: false,
         in_command: false,
     }
 }
@@ -39,44 +36,17 @@ impl<'a> Tokenizer<'a> {
     pub fn next(&mut self) -> Token<'a> {
         let mut last_index = 0;
         let mut in_whitespace = false;
+        let mut found_tab = false;
 
         loop {
-            // if self.source.len() == 0 {
-            //     return Token::Done;
-            // }
-            // let c = self.source[0];
-            // let c = if let Some(c) = self.source.get(last_index) {
-            //     *c
-            // } else {
-            //     return Token::Done;
-            // };
             let c = self.source.get(last_index).cloned();
 
             if let Some(c) = c {
-                // if c == b'\t' {
-                //     if self.in_command {
-                //         return Token::Err(()); // TODO
-                //     }
-                //     if !in_whitespace {
-                //         // TODO...
-                //     }
-                //     in_whitespace = true;
-                //     // self.source =
-
-                //     last_index += 1;
-                // } else if c == b'\n' {
-                //     if self.in_command {
-                //         // return last token
-
-                //         self.source = &self.source[last_index..];
-                //         self.in_command = false;
-                //         // self.in_whitespace = true;
-                //         return Token::CommandEnd;
-                //     }
-
-                //     last_index += 1;
-                // } else
                 if c.is_ascii_whitespace() {
+                    if c == b'\t' {
+                        found_tab = true;
+                    }
+
                     if last_index == 0 {
                         in_whitespace = true;
                     }
@@ -94,9 +64,16 @@ impl<'a> Tokenizer<'a> {
                 } else {
                     // visible symbol
 
+                    if self.in_command && found_tab {
+                        return Token::Err(()); // TODO
+                    } else {
+                        found_tab = false;
+                        self.in_command = true;
+                    }
+
                     if in_whitespace {
                         in_whitespace = false;
-                        self.source = &self.source[last_index ..];
+                        self.source = &self.source[last_index..];
                         last_index = 0;
                     } else {
                         last_index += 1;
