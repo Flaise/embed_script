@@ -59,7 +59,7 @@ mod tests {
 
     #[test]
     fn multi_whitespace() {
-        let mut script = Script::new("  version  1\n\nevent um\n\tend event");
+        let mut script = Script::new("  version 1\n\nevent um\n\tend event");
         assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 6, parameters: "1"}));
         assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 4, parameters: "um"}));
         assert_eq!(script_next(&mut script, ENV), ParseOp::Op(OpLine {command_index: 5, parameters: ""}));

@@ -205,8 +205,15 @@ pub fn parse_line<'a, 'b>(mut program: &'a str, commands: &'b [&str])
 
                 for (command_index, &command) in commands.iter().enumerate() {
                     if let Some(matched) = match_command(line, command) {
-                        let parameters = &line[matched.len()..];
-                        let parameters = parameters.trim_start();
+                        let mut parameters = &line[matched.len()..];
+
+                        // first space was necessary to separate command from parameters
+                        if let Some(&c) = parameters.as_bytes().get(0) {
+                            // TODO: if c == '\t' then formatting gets confusing
+                            if c.is_ascii_whitespace() {
+                                parameters = &parameters[1..];
+                            }
+                        }
 
                         let opline = OpLine {command_index, parameters};
                         return ParseLine::Op {opline, remainder};
@@ -337,14 +344,14 @@ mod tests {
             },
             remainder: "",
         });
-        assert_eq!(parse_line("\tset y: 7 - 40", COMMANDS), ParseLine::Op {
+        assert_eq!(parse_line("\tset y: 7 - 40  ", COMMANDS), ParseLine::Op {
             opline: OpLine {
                 command_index: 3,
                 parameters: "y: 7 - 40",
             },
             remainder: "",
         });
-        assert_eq!(parse_line(" set    y: 7 - 40", COMMANDS), ParseLine::Op {
+        assert_eq!(parse_line("  set y: 7 - 40\t", COMMANDS), ParseLine::Op {
             opline: OpLine {
                 command_index: 3,
                 parameters: "y: 7 - 40",
@@ -358,7 +365,7 @@ mod tests {
         assert_eq!(parse_line("if   something = 99", COMMANDS), ParseLine::Op {
             opline: OpLine {
                 command_index: 0,
-                parameters: "something = 99",
+                parameters: "  something = 99", // need leading whitespace for some commands
             },
             remainder: "",
         });

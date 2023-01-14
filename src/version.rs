@@ -10,6 +10,7 @@ pub fn pick_version<'a>(script: &'a mut Script) -> Result<&'a str, &'static str>
         ParseOp::Err(error) => Err(error.static_display()),
         ParseOp::Op(OpLine {command_index, parameters}) => {
             debug_assert_eq!(command_index, 0);
+            let parameters = parameters.trim_start(); // whitespace not needed for this command
             if parameters.len() == 0 {
                 return Err("version parameter missing");
             }
