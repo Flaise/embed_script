@@ -6,4 +6,5 @@ pub mod execute;
 mod parse;
 mod script;
 mod token;
+mod typing;
 mod version;

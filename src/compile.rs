@@ -1,9 +1,9 @@
 use core::convert::TryInto;
-use core::mem::transmute;
 use crate::parse::ParseOp;
-use crate::execute::{Instruction, OP_DONE, Register, OP_MOVE, OP_INT_ADD};
+use crate::execute::{Instruction, OP_DONE, OP_MOVE, OP_INT_ADD};
 use crate::script::{Script, script_next, Environment};
 use crate::token::{tokenize, Token};
+use crate::typing::{DataType, Register, int_to_register, float_to_register};
 
 struct WriteInstructions<'a> {
     pub inner: &'a mut [Instruction],
@@ -19,12 +19,6 @@ impl<'a> WriteInstructions<'a> {
         self.next_index += 1;
         Ok(())
     }
-}
-
-#[derive(Copy, Clone, Default, Debug)]
-enum DataType {
-    #[default]
-    U32,
 }
 
 #[derive(Copy, Clone)]
@@ -91,16 +85,27 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
         Ok(id)
     }
 
-    pub fn write_constant(&mut self, value: u32) -> Result<u8, &'static str> {
+    fn write_constant(&mut self, value: u32, data_type: DataType) -> Result<u8, &'static str> {
         for i in 0..self.next_variable {
-            if self.metadata[i].constant && self.inner[i] == value {
+            let meta = &self.metadata[i];
+            if meta.constant && meta.data_type == data_type && self.inner[i] == value {
                 return into_inst_index(i);
             }
         }
 
         let id = self.write_register(value)?;
-        self.metadata[id as usize].constant = true;
+        let meta = &mut self.metadata[id as usize];
+        meta.constant = true;
+        meta.data_type = data_type;
         Ok(id)
+    }
+
+    pub fn write_constant_int(&mut self, value: i32) -> Result<u8, &'static str> {
+        self.write_constant(int_to_register(value), DataType::I32)
+    }
+
+    pub fn write_constant_float(&mut self, value: f32) -> Result<u8, &'static str> {
+        self.write_constant(float_to_register(value), DataType::F32)
     }
 }
 
@@ -124,10 +129,10 @@ fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions: &mu
             todo!()
         }
         Token::Integer(val) => {
-            registers.write_constant(unsafe { transmute(val) })?
+            registers.write_constant_int(val)?
         }
-        Token::Float(r) => {
-            todo!()
+        Token::Float(val) => {
+            registers.write_constant_float(val)?
         }
         Token::Identifier(var) => {
             registers.write_variable(var)?
@@ -179,10 +184,10 @@ fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions: &mu
             todo!()
         }
         Token::Integer(val) => {
-            registers.write_constant(unsafe { transmute(val) })?
+            registers.write_constant_int(val)?
         }
-        Token::Float(r) => {
-            todo!()
+        Token::Float(val) => {
+            registers.write_constant_float(val)?
         }
         Token::Identifier(var) => {
             registers.write_variable(var)?
@@ -281,7 +286,7 @@ pub fn compile(source: &str, registers: &mut [Register], instructions: &mut [Ins
 
 #[cfg(test)]
 mod tests {
-    use crate::execute::{Register, OP_MOVE};
+    use crate::execute::OP_MOVE;
     use super::*;
 
     #[test]
@@ -330,6 +335,21 @@ mod tests {
         assert_eq!(instructions, &[
             Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
             Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 1, reg_c: 0},
+        ]);
+    }
+
+    #[test]
+    fn assign_different_type_constant() {
+        let float_5_as_reg = float_to_register(5.0);
+
+        let registers = &mut ([Register::default(); 4]);
+        let instructions = &mut ([Instruction::default(); 2]);
+        compile("set h: 1084227584\nset r: 5.0", registers, instructions).unwrap();
+
+        assert_eq!(registers, &[0, float_5_as_reg, 0, float_5_as_reg]);
+        assert_eq!(instructions, &[
+            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
+            Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 3, reg_c: 0},
         ]);
     }
 

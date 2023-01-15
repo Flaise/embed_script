@@ -1,3 +1,4 @@
+use crate::typing::Register;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Instruction {
@@ -20,8 +21,6 @@ pub const OP_INT_LT: u8 = 5;
 // pub const OP_JUMP: u8 = 6;
 /// A <- B + C
 pub const OP_INT_ADD: u8 = 7;
-
-pub type Register = u32;
 
 fn validate_branch(inst_len: usize, counter: usize, reg_a: u8) -> Result<(), &'static str> {
     debug_assert!(inst_len > counter);
