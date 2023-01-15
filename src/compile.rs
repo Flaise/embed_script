@@ -1,6 +1,6 @@
 use core::convert::TryInto;
 use crate::parse::ParseOp;
-use crate::execute::{Instruction, OP_DONE, OP_MOVE, OP_INT_ADD};
+use crate::execute::{Instruction, OP_DONE, OP_MOVE, OP_INT_ADD, OP_INT_SUB};
 use crate::script::{Script, script_next, Environment};
 use crate::token::{tokenize, Token};
 use crate::typing::{DataType, Register, int_to_register, float_to_register};
@@ -210,7 +210,7 @@ fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions: &mu
         Token::Symbol(sym) => {
             match sym {
                 "+" => OP_INT_ADD,
-                // "-" => OP_INT_SUB,
+                "-" => OP_INT_SUB,
                 _ => return Err("unknown operator"),
             }
         }
@@ -423,6 +423,16 @@ mod tests {
 
         assert_eq!(registers, &[0, 0, int_to_register(-3)]);
         assert_eq!(instructions, &[Instruction {opcode: OP_INT_ADD, reg_a: 0, reg_b: 1, reg_c: 2}]);
+    }
+
+    #[test]
+    fn subtraction() {
+        let registers = &mut ([Register::default(); 3]);
+        let instructions = &mut ([Instruction::default(); 1]);
+        compile("set r: a - b", registers, instructions).unwrap();
+
+        assert_eq!(registers, &[0, 0, 0]);
+        assert_eq!(instructions, &[Instruction {opcode: OP_INT_SUB, reg_a: 0, reg_b: 1, reg_c: 2}]);
     }
 
     #[test]
