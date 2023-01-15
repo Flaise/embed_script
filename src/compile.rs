@@ -52,6 +52,14 @@ fn into_inst_index(index: usize) -> Result<u8, &'static str> {
 
 impl<'a, 'b> WriteRegisters<'a, 'b> {
 
+    #[cfg(test)]
+    fn name_at(&self, id: u8) -> &[u8] {
+        debug_assert!(self.next_variable > id as usize);
+
+        let meta = &self.metadata[id as usize];
+        &meta.name[..meta.name_len as usize]
+    }
+
     fn write_register(&mut self, value: u32) -> Result<u8, &'static str> {
         if self.next_variable >= self.inner.len() {
             return Err("too many variables/constants");
@@ -91,11 +99,13 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
         if name.len() > 50 {
             return Err("a variable name must be 50 characters or less");
         }
+        let name_bytes = name.as_bytes();
 
         for i in 0..self.next_variable {
             let meta = &self.metadata[i];
-            let current_name = &meta.name[..meta.name_len as usize];
-            if !meta.constant && current_name == name.as_bytes() {
+            let meta_name = &meta.name[..meta.name_len as usize];
+
+            if !meta.constant && meta_name.eq_ignore_ascii_case(name_bytes) {
                 if data_type != DataType::Unknown && meta.data_type != data_type {
                     return Err("type mismatch");
                 }
@@ -105,7 +115,7 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
 
         let id = self.write_register(0)?;
         let meta = &mut self.metadata[id as usize];
-        meta.name[..name.as_bytes().len()].copy_from_slice(name.as_bytes());
+        meta.name[..name_bytes.len()].copy_from_slice(name_bytes);
         meta.name_len = name.len() as u8;
         meta.data_type = data_type;
 
@@ -249,8 +259,7 @@ mod tests {
         "set",
     ];
 
-    pub fn no(parameters: &str, registers: &mut WriteRegisters, instructions: &mut WriteInstructions)
-    -> Result<(), &'static str> {
+    fn no(_: &str, _: &mut WriteRegisters, _: &mut WriteInstructions) -> Result<(), &'static str> {
         panic!("should not be called");
     }
 
@@ -274,6 +283,42 @@ mod tests {
         compile("\t \n\t ", COMMANDS, PARSERS, registers, instructions).unwrap();
 
         assert_eq!(instructions[0], Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0});
+    }
+
+    #[test]
+    fn write_same_variable() {
+        let registers = &mut ([0; 2]);
+        let metadata = &mut ([RegisterType::default(); 256]);
+        let wr = &mut WriteRegisters {
+            inner: registers,
+            metadata,
+            next_variable: 0,
+        };
+
+        wr.write_variable("asdf", DataType::Unknown).unwrap();
+        wr.write_variable("asdf", DataType::Unknown).unwrap();
+
+        assert_eq!(wr.next_variable, 1);
+        assert_eq!(wr.name_at(0), b"asdf");
+        assert_eq!(registers, &[0, 0]);
+    }
+
+    #[test]
+    fn write_same_variable_case_insensitive() {
+        let registers = &mut ([0; 2]);
+        let metadata = &mut ([RegisterType::default(); 256]);
+        let wr = &mut WriteRegisters {
+            inner: registers,
+            metadata,
+            next_variable: 0,
+        };
+
+        wr.write_variable("asdf", DataType::Unknown).unwrap();
+        wr.write_variable("ASDF", DataType::Unknown).unwrap();
+
+        assert_eq!(wr.next_variable, 1);
+        assert_eq!(wr.name_at(0), b"asdf");
+        assert_eq!(registers, &[0, 0]);
     }
 
 }

@@ -5,12 +5,3 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-unicase = "2.6.0"
-
-# [dependencies.combine]
-# version = "4.6.6"
-# default-features = false
-
-# [dependencies.nom]
-# version = "7.1.2"
-# default-features = false
