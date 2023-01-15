@@ -411,6 +411,17 @@ mod tests {
         let instructions = &mut ([Instruction::default(); 1]);
         compile("set r: a + b", registers, instructions).unwrap();
 
+        assert_eq!(registers, &[0, 0, 0]);
+        assert_eq!(instructions, &[Instruction {opcode: OP_INT_ADD, reg_a: 0, reg_b: 1, reg_c: 2}]);
+    }
+
+    #[test]
+    fn addition_with_negative() {
+        let registers = &mut ([Register::default(); 3]);
+        let instructions = &mut ([Instruction::default(); 1]);
+        compile("set r: a + -3", registers, instructions).unwrap();
+
+        assert_eq!(registers, &[0, 0, int_to_register(-3)]);
         assert_eq!(instructions, &[Instruction {opcode: OP_INT_ADD, reg_a: 0, reg_b: 1, reg_c: 2}]);
     }
 
