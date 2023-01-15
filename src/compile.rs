@@ -1,7 +1,9 @@
 use core::convert::TryInto;
+use core::mem::transmute;
 use crate::parse::ParseOp;
-use crate::execute::{Instruction, OP_DONE, Register, OP_MOVE};
+use crate::execute::{Instruction, OP_DONE, Register, OP_MOVE, OP_INT_ADD};
 use crate::script::{Script, script_next, Environment};
+use crate::token::{tokenize, Token};
 
 struct WriteInstructions<'a> {
     pub inner: &'a mut [Instruction],
@@ -105,29 +107,104 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
 fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions: &mut WriteInstructions)
 -> Result<(), &'static str> {
 
-    let mut it = parameters.splitn(2, ":");
-    let variable = it.next();
-    let expression = it.next();
-    let (variable, expression) = match (variable, expression) {
-        (None, _) => return Err("set command syntax is    set variable: expression    (missing :)"),
-        (Some(_), None) => return Err("set command syntax is    set variable: expression    (missing expression)"),
-        (Some(a), Some(b)) => (a, b),
+    let mut tok = tokenize(parameters);
+    let dest = match tok.next() {
+        Token::Identifier(st) => st,
+        _ => return Err("set command syntax is    set variable: expression    (missing variable)"),
     };
-    let variable = variable.trim();
-    let expression = expression.trim();
-    if variable.len() == 0 {
-        return Err("set command syntax is    set variable: expression    (missing variable)");
-    }
-    if expression.len() == 0 {
-        return Err("set command syntax is    set variable: expression    (missing expression)");
+    let dest = registers.write_variable(dest)?;
+
+    match tok.next() {
+        Token::Symbol(":") => {}
+        _ => return Err("set command syntax is    set variable: expression    (missing :)"),
     }
 
-    let expr = expression.parse::<u32>().map_err(|_err| "u32 parse error")?;
+    let b = match tok.next() {
+        Token::Symbol(r) => {
+            todo!()
+        }
+        Token::Integer(val) => {
+            registers.write_constant(unsafe { transmute(val) })?
+        }
+        Token::Float(r) => {
+            todo!()
+        }
+        Token::Identifier(var) => {
+            registers.write_variable(var)?
+        }
+        Token::CommandEnd => {
+            debug_assert!(false, "there should be no newlines in the parameters");
+            return Err("internal error");
+        }
+        Token::Done => {
+            return Ok(());
+        }
+        Token::Err(()) => {
+            return Err("unknown error");
+        }
+    };
 
-    let dest = registers.write_variable(variable)?;
-    let constant = registers.write_constant(expr)?;
+    let op = match tok.next() {
+        Token::Symbol(sym) => {
+            match sym {
+                "+" => OP_INT_ADD,
+                // "-" => OP_INT_SUB,
+                _ => todo!()
+            }
+        }
+        Token::Integer(r) => {
+            todo!()
+        }
+        Token::Float(r) => {
+            todo!()
+        }
+        Token::Identifier(r) => {
+            todo!()
+        }
+        Token::CommandEnd => {
+            debug_assert!(false, "there should be no newlines in the parameters");
+            return Err("internal error");
+        }
+        Token::Done => {
 
-    instructions.write(Instruction {opcode: OP_MOVE, reg_a: dest, reg_b: constant, reg_c: 0})
+            return instructions.write(Instruction {opcode: OP_MOVE, reg_a: dest, reg_b: b, reg_c: 0});
+        }
+        Token::Err(()) => {
+            return Err("unknown error");
+        }
+    };
+
+    let c = match tok.next() {
+        Token::Symbol(r) => {
+            todo!()
+        }
+        Token::Integer(val) => {
+            registers.write_constant(unsafe { transmute(val) })?
+        }
+        Token::Float(r) => {
+            todo!()
+        }
+        Token::Identifier(var) => {
+            registers.write_variable(var)?
+        }
+        Token::CommandEnd => {
+            debug_assert!(false, "there should be no newlines in the parameters");
+            return Err("internal error");
+        }
+        Token::Done => {
+            return Ok(());
+        }
+        Token::Err(()) => {
+            return Err("unknown error");
+        }
+    };
+
+    match tok.next() {
+        Token::Done => {}
+        _ => return Err("currently the set command only takes 1 or 2 terms separated by an operator, i.e. A + 1"),
+    }
+
+    instructions.write(Instruction {opcode: OP_INT_ADD, reg_a: dest, reg_b: b, reg_c: c})
 }
 
 fn parse_if(parameters: &str, registers: &mut WriteRegisters, instructions: &mut WriteInstructions)
@@ -269,11 +346,12 @@ mod tests {
         ]);
     }
 
-    // #[test]
-    // fn addition() {
-    //     let instructions = &mut ([Instruction::default(); 1]);
-    //     compile("set r: a + b", instructions).unwrap();
+    #[test]
+    fn addition() {
+        let registers = &mut ([Register::default(); 3]);
+        let instructions = &mut ([Instruction::default(); 1]);
+        compile("set r: a + b", registers, instructions).unwrap();
 
-    //     assert_eq!(instructions, &[Instruction {opcode: OP_INT_ADD, reg_a: 0, reg_b: 1, reg_c: 2}]);
-    // }
+        assert_eq!(instructions, &[Instruction {opcode: OP_INT_ADD, reg_a: 0, reg_b: 1, reg_c: 2}]);
+    }
 }

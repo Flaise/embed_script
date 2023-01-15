@@ -450,6 +450,17 @@ mod tests {
     }
 
     #[test]
+    fn assignment_condensed() {
+        let mut tokenizer = tokenize("result:a+1");
+        assert_eq!(tokenizer.next(), Token::Identifier("result"));
+        assert_eq!(tokenizer.next(), Token::Symbol(":"));
+        assert_eq!(tokenizer.next(), Token::Identifier("a"));
+        assert_eq!(tokenizer.next(), Token::Symbol("+"));
+        assert_eq!(tokenizer.next(), Token::Integer(1));
+        assert_eq!(tokenizer.next(), Token::Done);
+    }
+
+    #[test]
     fn conditional_int_gaps() {
         let mut tokenizer = tokenize("a >= 3");
         assert_eq!(tokenizer.next(), Token::Identifier("a"));
