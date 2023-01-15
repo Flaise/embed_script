@@ -1,13 +1,13 @@
 use core::convert::TryInto;
 use crate::parse::ParseOp;
-use crate::execute::{Instruction, OP_DONE, OP_MOVE, OP_INT_ADD, OP_INT_SUB};
+use crate::execute::{Instruction, OP_DONE};
 use crate::script::{Script, script_next, Commands};
-use crate::token::{tokenize, Token};
+use crate::token::Token;
 use crate::typing::{DataType, Register, int_to_register, float_to_register};
 
-struct WriteInstructions<'a> {
-    pub inner: &'a mut [Instruction],
-    pub next_index: usize,
+pub struct WriteInstructions<'a> {
+    inner: &'a mut [Instruction],
+    next_index: usize,
 }
 
 impl<'a> WriteInstructions<'a> {
@@ -40,10 +40,10 @@ impl Default for RegisterType {
     }
 }
 
-struct WriteRegisters<'a, 'b> {
-    pub inner: &'a mut [Register],
-    pub metadata: &'b mut [RegisterType],
-    pub next_variable: usize,
+pub struct WriteRegisters<'a, 'b> {
+    inner: &'a mut [Register],
+    metadata: &'b mut [RegisterType],
+    next_variable: usize,
 }
 
 fn into_inst_index(index: usize) -> Result<u8, &'static str> {
@@ -151,7 +151,7 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
     }
 }
 
-fn token_to_register_id(registers: &mut WriteRegisters, token: Token, constant_allowed: bool)
+pub fn token_to_register_id(registers: &mut WriteRegisters, token: Token, constant_allowed: bool)
 -> Result<u8, &'static str> {
     match token {
         Token::Symbol(_) => {
@@ -187,93 +187,13 @@ fn token_to_register_id(registers: &mut WriteRegisters, token: Token, constant_a
     }
 }
 
-fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions: &mut WriteInstructions)
+pub type Parser = fn (parameters: &str, registers: &mut WriteRegisters, instructions: &mut WriteInstructions) -> Result<(), &'static str>;
+
+pub fn compile(source: &str, commands: Commands, parsers: &[Parser], registers: &mut [Register], instructions: &mut [Instruction])
 -> Result<(), &'static str> {
+    debug_assert!(commands.len() == parsers.len());
 
-    let mut tok = tokenize(parameters);
-
-    let dest = token_to_register_id(registers, tok.next(), false)?;
-
-    match tok.next() {
-        Token::Symbol(":") => {}
-        _ => return Err("set command syntax is    set variable: expression    (missing :)"),
-    }
-
-    let b = token_to_register_id(registers, tok.next(), true)?;
-
-    let data_type = registers.get_data_type(b);
-    if data_type != DataType::Unknown {
-        registers.set_data_type(dest, data_type)?;
-    }
-
-    let op = match tok.next() {
-        Token::Symbol(sym) => {
-            match sym {
-                "+" => OP_INT_ADD,
-                "-" => OP_INT_SUB,
-                _ => return Err("unknown operator"),
-            }
-        }
-        Token::Integer(_) => {
-            return Err("operator required, found constant");
-        }
-        Token::Float(_) => {
-            return Err("operator required, found constant");
-        }
-        Token::Identifier(_) => {
-            return Err("operator required, found variable");
-        }
-        Token::CommandEnd => {
-            debug_assert!(false, "there should be no newlines in the parameters");
-            return Err("internal error");
-        }
-        Token::Done => {
-            return instructions.write(Instruction {opcode: OP_MOVE, reg_a: dest, reg_b: b, reg_c: 0});
-        }
-        Token::Err(()) => {
-            return Err("unknown error");
-        }
-    };
-
-    let c = token_to_register_id(registers, tok.next(), true)?;
-
-    let data_type = registers.get_data_type(c);
-    if data_type != DataType::Unknown {
-        registers.set_data_type(dest, data_type)?;
-        registers.set_data_type(b, data_type)?;
-    }
-
-    match tok.next() {
-        Token::Done => {}
-        _ => return Err("currently the set command only takes 1 or 2 terms separated by an operator, i.e. A + 1"),
-    }
-
-    instructions.write(Instruction {opcode: op, reg_a: dest, reg_b: b, reg_c: c})
-}
-
-fn parse_if(parameters: &str, registers: &mut WriteRegisters, instructions: &mut WriteInstructions)
--> Result<(), &'static str> {
-    Err("not implemented")
-}
-
-fn parse_end_if(parameters: &str, registers: &mut WriteRegisters, instructions: &mut WriteInstructions)
--> Result<(), &'static str> {
-    Err("not implemented")
-}
-
-pub fn compile(source: &str, registers: &mut [Register], instructions: &mut [Instruction])
--> Result<(), &'static str> {
     let mut script = Script::new(source);
-    let commands = &[
-        "if",
-        "end if",
-        "set",
-    ];
-    let parsers = &[
-        parse_if,
-        parse_end_if,
-        parse_set,
-    ];
     let instructions = &mut WriteInstructions {next_index: 0, inner: instructions};
 
     let metadata = &mut ([RegisterType::default(); 256]);
@@ -282,8 +202,6 @@ pub fn compile(source: &str, registers: &mut [Register], instructions: &mut [Ins
         metadata,
         next_variable: 0,
     };
-
-    debug_assert!(commands.len() == parsers.len());
 
     let mut prev_len = 0;
 
@@ -321,137 +239,41 @@ pub fn compile(source: &str, registers: &mut [Register], instructions: &mut [Ins
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use crate::execute::OP_MOVE;
     use super::*;
+
+    const COMMANDS: Commands = &[
+        "if",
+        "end if",
+        "set",
+    ];
+
+    pub fn no(parameters: &str, registers: &mut WriteRegisters, instructions: &mut WriteInstructions)
+    -> Result<(), &'static str> {
+        panic!("should not be called");
+    }
+
+    const PARSERS: &[Parser] = &[
+        no,
+        no,
+        no,
+    ];
 
     #[test]
     fn empty_to_empty_no_error() {
         let registers = &mut ([Register::default(); 2]);
         let instructions = &mut [];
-        compile("   ", registers, instructions).unwrap();
+        compile("   ", COMMANDS, PARSERS, registers, instructions).unwrap();
     }
 
     #[test]
     fn empty_termination() {
         let registers = &mut ([Register::default(); 2]);
         let instructions = &mut ([Instruction::default(); 2]);
-        compile("\t \n\t ", registers, instructions).unwrap();
+        compile("\t \n\t ", COMMANDS, PARSERS, registers, instructions).unwrap();
 
         assert_eq!(instructions[0], Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0});
     }
 
-    #[test]
-    fn literal_assignment() {
-        let registers = &mut ([Register::default(); 2]);
-        let instructions = &mut ([Instruction::default(); 1]);
-        compile("set r: 7", registers, instructions).unwrap();
-
-        assert_eq!(registers, &[0, 7]);
-        assert_eq!(instructions, &[Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0}]);
-    }
-
-    #[test]
-    fn literal_assignment_2() {
-        let registers = &mut ([Register::default(); 2]);
-        let instructions = &mut ([Instruction::default(); 1]);
-        compile("set h: 6", registers, instructions).unwrap();
-
-        assert_eq!(registers, &[0, 6]);
-        assert_eq!(instructions, &[Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0}]);
-    }
-
-    #[test]
-    fn assign_same_constant() {
-        let registers = &mut ([Register::default(); 3]);
-        let instructions = &mut ([Instruction::default(); 2]);
-        compile("set h: 5\nset r: 5", registers, instructions).unwrap();
-
-        assert_eq!(registers, &[0, 5, 0]);
-        assert_eq!(instructions, &[
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-            Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 1, reg_c: 0},
-        ]);
-    }
-
-    #[test]
-    fn assign_different_type_constant() {
-        let float_5_as_reg = float_to_register(5.0);
-
-        let registers = &mut ([Register::default(); 4]);
-        let instructions = &mut ([Instruction::default(); 2]);
-        compile("set h: 1084227584\nset r: 5.0", registers, instructions).unwrap();
-
-        assert_eq!(registers, &[0, float_5_as_reg, 0, float_5_as_reg]);
-        assert_eq!(instructions, &[
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-            Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 3, reg_c: 0},
-        ]);
-    }
-
-    #[test]
-    fn assign_same_variable() {
-        let registers = &mut ([Register::default(); 3]);
-        let instructions = &mut ([Instruction::default(); 2]);
-        compile("set var: 5\nset var: 7", registers, instructions).unwrap();
-
-        assert_eq!(registers, &[0, 5, 7]);
-        assert_eq!(instructions, &[
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
-        ]);
-    }
-
-    #[test]
-    fn addition() {
-        let registers = &mut ([Register::default(); 3]);
-        let instructions = &mut ([Instruction::default(); 1]);
-        compile("set r: a + b", registers, instructions).unwrap();
-
-        assert_eq!(registers, &[0, 0, 0]);
-        assert_eq!(instructions, &[Instruction {opcode: OP_INT_ADD, reg_a: 0, reg_b: 1, reg_c: 2}]);
-    }
-
-    #[test]
-    fn addition_with_negative() {
-        let registers = &mut ([Register::default(); 3]);
-        let instructions = &mut ([Instruction::default(); 1]);
-        compile("set r: a + -3", registers, instructions).unwrap();
-
-        assert_eq!(registers, &[0, 0, int_to_register(-3)]);
-        assert_eq!(instructions, &[Instruction {opcode: OP_INT_ADD, reg_a: 0, reg_b: 1, reg_c: 2}]);
-    }
-
-    #[test]
-    fn subtraction() {
-        let registers = &mut ([Register::default(); 3]);
-        let instructions = &mut ([Instruction::default(); 1]);
-        compile("set r: a - b", registers, instructions).unwrap();
-
-        assert_eq!(registers, &[0, 0, 0]);
-        assert_eq!(instructions, &[Instruction {opcode: OP_INT_SUB, reg_a: 0, reg_b: 1, reg_c: 2}]);
-    }
-
-    #[test]
-    fn no_trailing_operator() {
-        let registers = &mut ([Register::default(); 3]);
-        let instructions = &mut ([Instruction::default(); 5]);
-        compile("set r: a +", registers, instructions).unwrap_err();
-    }
-
-    #[test]
-    fn mismatched_type() {
-        let registers = &mut ([Register::default(); 3]);
-        let instructions = &mut ([Instruction::default(); 5]);
-        compile("set r: 1\nset r: 2.0", registers, instructions).unwrap_err();
-    }
-
-    #[test]
-    fn no_mixed_arithmetic() {
-        let registers = &mut ([Register::default(); 3]);
-        let instructions = &mut ([Instruction::default(); 5]);
-        compile("set r: 1 + 2.0", registers, instructions).unwrap_err();
-    }
 }
