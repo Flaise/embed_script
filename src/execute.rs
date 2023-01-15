@@ -1,4 +1,4 @@
-use crate::typing::Register;
+use crate::typing::{Register, int_to_register, register_to_int};
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Instruction {
@@ -21,6 +21,8 @@ pub const OP_INT_LT: u8 = 5;
 // pub const OP_JUMP: u8 = 6;
 /// A <- B + C
 pub const OP_INT_ADD: u8 = 7;
+/// A <- B - C
+pub const OP_INT_SUB: u8 = 8;
 
 fn validate_branch(inst_len: usize, counter: usize, reg_a: u8) -> Result<(), &'static str> {
     debug_assert!(inst_len > counter);
@@ -48,8 +50,19 @@ pub fn execute(starting_instruction: usize, registers: &mut [Register], instruct
                 registers[inst.reg_a as usize] = bv;
             }
             OP_INT_ADD => {
-                if let Some(a) = bv.checked_add(cv) {
-                    registers[inst.reg_a as usize] = a;
+                let bi = register_to_int(bv);
+                let ci = register_to_int(cv);
+                if let Some(a) = bi.checked_add(ci) {
+                    registers[inst.reg_a as usize] = int_to_register(a);
+                } else {
+                    todo!();
+                }
+            }
+            OP_INT_SUB => {
+                let bi = register_to_int(bv);
+                let ci = register_to_int(cv);
+                if let Some(a) = bi.checked_sub(ci) {
+                    registers[inst.reg_a as usize] = int_to_register(a);
                 } else {
                     todo!();
                 }
@@ -82,6 +95,8 @@ pub fn execute(starting_instruction: usize, registers: &mut [Register], instruct
 
 #[cfg(test)]
 mod tests {
+    use crate::typing::int_to_register;
+
     use super::*;
 
     #[test]
@@ -108,6 +123,17 @@ mod tests {
         ]).unwrap();
 
         assert_eq!(registers, &[2, 3, 5]);
+    }
+
+    #[test]
+    fn subtraction() {
+        let registers = &mut [2, 3, 0];
+
+        execute(0, registers, &[
+            Instruction {opcode: OP_INT_SUB, reg_a: 2, reg_b: 0, reg_c: 1},
+        ]).unwrap();
+
+        assert_eq!(registers, &[2, 3, int_to_register(-1)]);
     }
 
     #[test]
