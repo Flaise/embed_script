@@ -1,6 +1,6 @@
 use core::str::from_utf8;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Token<'a> {
     Done,
     CommandEnd,
@@ -62,12 +62,16 @@ pub fn tokenize<'a>(source: &'a str) -> Tokenizer<'a> {
     Tokenizer {
         source: source.as_bytes(),
         in_command: false,
+        next_token: None,
+        last_result: Token::Done,
     }
 }
 
 pub struct Tokenizer<'a> {
     source: &'a [u8],
     in_command: bool,
+    next_token: Option<Token<'a>>,
+    last_result: Token<'a>,
 }
 
 impl<'a> Tokenizer<'a> {
@@ -75,6 +79,31 @@ impl<'a> Tokenizer<'a> {
         let result = from_utf8(&self.source[..index]).unwrap();
         self.source = &self.source[index..];
         result
+    }
+
+    pub fn next_join(&mut self) -> Token<'a> {
+        let next = self.next_token.take().unwrap_or_else(|| self.next());
+        self.last_result = match next {
+            minus @ Token::Symbol("-") => {
+                match self.last_result {
+                    Token::Integer(_) | Token::Float(_) | Token::Identifier(_) => {
+                        minus
+                    }
+                    _ => {
+                        match self.next() {
+                            Token::Integer(val) => Token::Integer(-val),
+                            Token::Float(val) => Token::Float(-val),
+                            token @ _ => {
+                                self.next_token = Some(token);
+                                minus
+                            }
+                        }
+                    }
+                }
+            }
+            token @ _ => token,
+        };
+        self.last_result
     }
 
     pub fn next(&mut self) -> Token<'a> {
@@ -547,6 +576,87 @@ mod tests {
 
         let mut tokenizer = tokenize("1..");
         assert!(tokenizer.next().is_err());
+    }
+
+    #[test]
+    fn negative_integers() {
+        let mut tokenizer = tokenize("-1");
+        assert_eq!(tokenizer.next_join(), Token::Integer(-1));
+        assert_eq!(tokenizer.next_join(), Token::Done);
+
+        let mut tokenizer = tokenize("-0");
+        assert_eq!(tokenizer.next_join(), Token::Integer(0));
+        assert_eq!(tokenizer.next_join(), Token::Done);
+    }
+
+    #[test]
+    fn negative_floats() {
+        let mut tokenizer = tokenize("-1.0");
+        assert_eq!(tokenizer.next_join(), Token::Float(-1.0));
+        assert_eq!(tokenizer.next_join(), Token::Done);
+
+        let mut tokenizer = tokenize("-10.125");
+        assert_eq!(tokenizer.next_join(), Token::Float(-10.125));
+        assert_eq!(tokenizer.next_join(), Token::Done);
+
+        let mut tokenizer = tokenize("-0.0");
+        assert_eq!(tokenizer.next_join(), Token::Float(0.0));
+        assert_eq!(tokenizer.next_join(), Token::Done);
+    }
+
+    #[test]
+    fn negatives_in_arithmetic() {
+        let mut tokenizer = tokenize("2 -1.0");
+        assert_eq!(tokenizer.next_join(), Token::Integer(2));
+        assert_eq!(tokenizer.next_join(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next_join(), Token::Float(1.0));
+        assert_eq!(tokenizer.next_join(), Token::Done);
+
+        let mut tokenizer = tokenize("2 -1");
+        assert_eq!(tokenizer.next_join(), Token::Integer(2));
+        assert_eq!(tokenizer.next_join(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next_join(), Token::Integer(1));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize("2-1");
+        assert_eq!(tokenizer.next_join(), Token::Integer(2));
+        assert_eq!(tokenizer.next_join(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next_join(), Token::Integer(1));
+        assert_eq!(tokenizer.next(), Token::Done);
+    }
+
+    #[test]
+    fn double_symbols() {
+        let mut tokenizer = tokenize("5 + -1");
+        assert_eq!(tokenizer.next_join(), Token::Integer(5));
+        assert_eq!(tokenizer.next_join(), Token::Symbol("+"));
+        assert_eq!(tokenizer.next_join(), Token::Integer(-1));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize("5 - -1");
+        assert_eq!(tokenizer.next_join(), Token::Integer(5));
+        assert_eq!(tokenizer.next_join(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next_join(), Token::Integer(-1));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize("5- -1");
+        assert_eq!(tokenizer.next_join(), Token::Integer(5));
+        assert_eq!(tokenizer.next_join(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next_join(), Token::Integer(-1));
+        assert_eq!(tokenizer.next(), Token::Done);
+    }
+
+    #[test]
+    fn extraneous_prefixes() {
+        let mut tokenizer = tokenize("- -1");
+        assert_eq!(tokenizer.next_join(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next_join(), Token::Integer(-1));
+        assert_eq!(tokenizer.next(), Token::Done);
+
+        let mut tokenizer = tokenize("--1");
+        assert_eq!(tokenizer.next_join(), Token::Symbol("--"));
+        assert_eq!(tokenizer.next_join(), Token::Integer(1));
+        assert_eq!(tokenizer.next(), Token::Done);
     }
 
 }
