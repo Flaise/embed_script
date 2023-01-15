@@ -5,6 +5,7 @@ pub type Register = u32;
 #[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
 pub enum DataType {
     #[default]
+    Unknown,
     I32,
     F32,
 }

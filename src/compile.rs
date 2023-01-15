@@ -62,7 +62,29 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
         Ok(id)
     }
 
-    pub fn write_variable(&mut self, name: &str) -> Result<u8, &'static str> {
+    pub fn get_data_type(&self, reg_id: u8) -> DataType {
+        self.metadata[reg_id as usize].data_type
+    }
+
+    pub fn set_data_type(&mut self, reg_id: u8, data_type: DataType) -> Result<(), &'static str> {
+        if data_type == DataType::Unknown {
+            debug_assert!(false, "don't alter a variable type to unknown");
+            return Err("internal error");
+        }
+
+        if let Some(meta) = self.metadata.get_mut(reg_id as usize) {
+            if meta.data_type == DataType::Unknown {
+                meta.data_type = data_type;
+            } else if meta.data_type != data_type {
+                return Err("type mismatch");
+            }
+            return Ok(());
+        } else {
+            return Err("internal error");
+        }
+    }
+
+    pub fn write_variable(&mut self, name: &str, data_type: DataType) -> Result<u8, &'static str> {
         if name.contains(|c: char| c.is_whitespace()) {
             return Err("a variable name can't contain spaces");
         }
@@ -74,6 +96,9 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
             let meta = &self.metadata[i];
             let current_name = &meta.name[..meta.name_len as usize];
             if !meta.constant && current_name == name.as_bytes() {
+                if data_type != DataType::Unknown && meta.data_type != data_type {
+                    return Err("type mismatch");
+                }
                 return into_inst_index(i);
             }
         }
@@ -82,10 +107,15 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
         let meta = &mut self.metadata[id as usize];
         meta.name[..name.as_bytes().len()].copy_from_slice(name.as_bytes());
         meta.name_len = name.len() as u8;
+        meta.data_type = data_type;
+
+        debug_assert_eq!(self.get_data_type(id), data_type);
         Ok(id)
     }
 
     fn write_constant(&mut self, value: u32, data_type: DataType) -> Result<u8, &'static str> {
+        debug_assert!(data_type != DataType::Unknown, "all constants should have a known type");
+
         for i in 0..self.next_variable {
             let meta = &self.metadata[i];
             if meta.constant && meta.data_type == data_type && self.inner[i] == value {
@@ -97,15 +127,27 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
         let meta = &mut self.metadata[id as usize];
         meta.constant = true;
         meta.data_type = data_type;
+
+        debug_assert_eq!(self.get_data_type(id), data_type);
         Ok(id)
     }
 
     pub fn write_constant_int(&mut self, value: i32) -> Result<u8, &'static str> {
-        self.write_constant(int_to_register(value), DataType::I32)
+        let id = self.write_constant(int_to_register(value), DataType::I32)?;
+
+        let data_type = self.get_data_type(id);
+        debug_assert_eq!(data_type, DataType::I32);
+
+        Ok(id)
     }
 
     pub fn write_constant_float(&mut self, value: f32) -> Result<u8, &'static str> {
-        self.write_constant(float_to_register(value), DataType::F32)
+        let id = self.write_constant(float_to_register(value), DataType::F32)?;
+
+        let data_type = self.get_data_type(id);
+        debug_assert_eq!(data_type, DataType::F32);
+
+        Ok(id)
     }
 }
 
@@ -126,7 +168,7 @@ fn token_to_register_id(registers: &mut WriteRegisters, token: Token, constant_a
             registers.write_constant_float(val)
         }
         Token::Identifier(var) => {
-            registers.write_variable(var)
+            registers.write_variable(var, DataType::Unknown)
         }
         Token::CommandEnd => {
             debug_assert!(false, "there should be no newlines in the parameters");
@@ -159,12 +201,17 @@ fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions: &mu
 
     let b = token_to_register_id(registers, tok.next(), true)?;
 
+    let data_type = registers.get_data_type(b);
+    if data_type != DataType::Unknown {
+        registers.set_data_type(dest, data_type)?;
+    }
+
     let op = match tok.next() {
         Token::Symbol(sym) => {
             match sym {
                 "+" => OP_INT_ADD,
                 // "-" => OP_INT_SUB,
-                _ => todo!()
+                _ => return Err("unknown operator"),
             }
         }
         Token::Integer(_) => {
@@ -189,6 +236,12 @@ fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions: &mu
     };
 
     let c = token_to_register_id(registers, tok.next(), true)?;
+
+    let data_type = registers.get_data_type(c);
+    if data_type != DataType::Unknown {
+        registers.set_data_type(dest, data_type)?;
+        registers.set_data_type(b, data_type)?;
+    }
 
     match tok.next() {
         Token::Done => {}
@@ -364,7 +417,21 @@ mod tests {
     #[test]
     fn no_trailing_operator() {
         let registers = &mut ([Register::default(); 3]);
-        let instructions = &mut ([Instruction::default(); 1]);
+        let instructions = &mut ([Instruction::default(); 5]);
         compile("set r: a +", registers, instructions).unwrap_err();
+    }
+
+    #[test]
+    fn mismatched_type() {
+        let registers = &mut ([Register::default(); 3]);
+        let instructions = &mut ([Instruction::default(); 5]);
+        compile("set r: 1\nset r: 2.0", registers, instructions).unwrap_err();
+    }
+
+    #[test]
+    fn no_mixed_arithmetic() {
+        let registers = &mut ([Register::default(); 3]);
+        let instructions = &mut ([Instruction::default(); 5]);
+        compile("set r: 1 + 2.0", registers, instructions).unwrap_err();
     }
 }
