@@ -10,19 +10,11 @@ impl<'a> Script<'a> {
     }
 }
 
-pub struct Environment<'a> {
-    commands: &'a [&'a str],
-}
+pub type Commands<'a> = &'a [&'a str];
 
-impl<'a> Environment<'a> {
-    pub const fn new(commands: &'a [&'a str]) -> Environment<'a> {
-        Environment {commands}
-    }
-}
-
-pub fn script_next<'a, 'b>(script: &'a mut Script, environment: &'b Environment)
+pub fn script_next<'a, 'b>(script: &'a mut Script, commands: Commands<'b>)
 -> ParseOp<'a> {
-    match parse_line(&script.source, environment.commands) {
+    match parse_line(&script.source, commands) {
         ParseLine::Done => ParseOp::Done,
         ParseLine::Err(error) => ParseOp::Err(error),
         ParseLine::Op {opline, remainder} => {
@@ -37,17 +29,15 @@ mod tests {
     use crate::parse::OpLine;
     use super::*;
 
-    const ENV: &Environment = &Environment {
-        commands: &[
-            "if",
-            "else if",
-            "end if",
-            "set",
-            "event",
-            "end event",
-            "version",
-        ]
-    };
+    const ENV: Commands = &[
+        "if",
+        "else if",
+        "end if",
+        "set",
+        "event",
+        "end event",
+        "version",
+    ];
 
     #[test]
     fn multiline() {

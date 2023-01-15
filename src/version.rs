@@ -1,7 +1,7 @@
 use crate::parse::{OpLine, ParseOp, ScriptError};
-use crate::script::{Script, script_next, Environment};
+use crate::script::{Script, script_next, Commands};
 
-const ENV: &Environment = &Environment::new(&["version"]);
+const ENV: Commands = &["version"];
 
 pub fn pick_version<'a>(script: &'a mut Script) -> Result<&'a str, &'static str> {
     match script_next(script, ENV) {

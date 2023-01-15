@@ -1,7 +1,7 @@
 use core::convert::TryInto;
 use crate::parse::ParseOp;
 use crate::execute::{Instruction, OP_DONE, OP_MOVE, OP_INT_ADD, OP_INT_SUB};
-use crate::script::{Script, script_next, Environment};
+use crate::script::{Script, script_next, Commands};
 use crate::token::{tokenize, Token};
 use crate::typing::{DataType, Register, int_to_register, float_to_register};
 
@@ -269,7 +269,6 @@ pub fn compile(source: &str, registers: &mut [Register], instructions: &mut [Ins
         "end if",
         "set",
     ];
-    let env = Environment::new(commands);
     let parsers = &[
         parse_if,
         parse_end_if,
@@ -294,7 +293,7 @@ pub fn compile(source: &str, registers: &mut [Register], instructions: &mut [Ins
         }
         prev_len = script.source.len();
 
-        let parseop = script_next(&mut script, &env);
+        let parseop = script_next(&mut script, commands);
 
         match parseop {
             ParseOp::Op(op) => {
