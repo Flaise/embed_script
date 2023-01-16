@@ -222,7 +222,6 @@ pub fn parse_line<'a, 'b>(mut program: &'a str, commands: &'b [&str])
 
                         // first space was necessary to separate command from parameters
                         if let Some(&c) = parameters.as_bytes().get(0) {
-                            // TODO: if c == '\t' then formatting gets confusing
                             if c.is_ascii_whitespace() {
                                 parameters = &parameters[1..];
                             }

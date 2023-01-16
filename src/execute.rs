@@ -8,6 +8,7 @@ pub struct Instruction {
     pub reg_c: u8,
 }
 
+/// no parameters
 pub const OP_DONE: u8 = 1;
 /// A <- B
 pub const OP_MOVE: u8 = 2;
@@ -17,8 +18,8 @@ pub const OP_INT_EQ: u8 = 3;
 pub const OP_INT_LE: u8 = 4;
 /// if B < C then jump A
 pub const OP_INT_LT: u8 = 5;
-// /// jump ([A B C] as u24 BE)
-// pub const OP_JUMP: u8 = 6;
+/// if B != C then jump A
+pub const OP_INT_NE: u8 = 6;
 /// A <- B + C
 pub const OP_INT_ADD: u8 = 7;
 /// A <- B - C
@@ -79,6 +80,12 @@ pub fn execute(starting_instruction: usize, registers: &mut [Register], instruct
             OP_INT_LT => {
                 validate_branch(instructions.len(), counter, inst.reg_a)?;
                 if bv < cv {
+                    counter += inst.reg_a as usize;
+                }
+            }
+            OP_INT_NE => {
+                validate_branch(instructions.len(), counter, inst.reg_a)?;
+                if bv != cv {
                     counter += inst.reg_a as usize;
                 }
             }
