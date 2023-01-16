@@ -348,4 +348,21 @@ mod tests {
             Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
         ]);
     }
+
+    #[test]
+    fn empty_if_not_equal() {
+        let registers = &mut ([Register::default(); 3]);
+        let instructions = &mut ([Instruction::default(); 2]);
+        let source = "
+            if r != 10
+            end if
+        ";
+        compile(source, COMMANDS, PARSERS, registers, instructions).unwrap();
+
+        assert_eq!(registers, &[0, 10, 0]);
+        assert_eq!(instructions, &[
+            Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+        ]);
+    }
 }
