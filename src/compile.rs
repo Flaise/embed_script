@@ -1,5 +1,5 @@
 use core::convert::TryInto;
-use crate::scan::ParseOp;
+use crate::scan::ScanOp;
 use crate::execute::{Instruction, OP_DONE};
 use crate::script::{Script, script_next, Commands};
 use crate::token::Token;
@@ -229,14 +229,14 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser], registers: 
         let parseop = script_next(&mut script, commands);
 
         match parseop {
-            ParseOp::Op(op) => {
+            ScanOp::Op(op) => {
                 if let Some(parser) = parsers.get(op.command_index) {
                     parser(op.parameters, registers, instructions)?;
                 } else {
                     return Err("internal error: invalid command index");
                 }
             }
-            ParseOp::Done => {
+            ScanOp::Done => {
                 if instructions.next_index < instructions.inner.len() {
                     instructions.write(Instruction {
                         opcode: OP_DONE,
@@ -247,7 +247,7 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser], registers: 
                 }
                 return Ok(());
             }
-            ParseOp::Err(error) => {
+            ScanOp::Err(error) => {
                 return Err(error.static_display());
             }
         }

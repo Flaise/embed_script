@@ -1,14 +1,12 @@
-use crate::scan::{OpLine, ParseOp, ScriptError};
-use crate::script::{Script, script_next, Commands};
-
-const ENV: Commands = &["version"];
+use crate::scan::{OpLine, ScanOp, ScriptError};
+use crate::script::{Script, script_next};
 
 pub fn pick_version<'a>(script: &'a mut Script) -> Result<&'a str, &'static str> {
-    match script_next(script, ENV) {
-        ParseOp::Done => Err("version not found"),
-        ParseOp::Err(ScriptError::UnknownCommand) => Err("'version' must be the first command in the script"),
-        ParseOp::Err(error) => Err(error.static_display()),
-        ParseOp::Op(OpLine {command_index, parameters}) => {
+    match script_next(script, &["version"]) {
+        ScanOp::Done => Err("version not found"),
+        ScanOp::Err(ScriptError::UnknownCommand) => Err("'version' must be the first command in the script"),
+        ScanOp::Err(error) => Err(error.static_display()),
+        ScanOp::Op(OpLine {command_index, parameters}) => {
             debug_assert_eq!(command_index, 0);
             let parameters = parameters.trim_start(); // whitespace not needed for this command
             if parameters.len() == 0 {

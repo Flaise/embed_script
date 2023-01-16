@@ -24,15 +24,15 @@ pub struct OpLine<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum ParseOp<'a> {
+pub enum ScanOp<'a> {
     Op(OpLine<'a>),
     Done,
     Err(ScriptError),
 }
 
-impl<'a> ParseOp<'a> {
+impl<'a> ScanOp<'a> {
     pub fn is_err(&self) -> bool {
-        if let ParseOp::Err(_) = self {
+        if let ScanOp::Err(_) = self {
             return true;
         }
         false
