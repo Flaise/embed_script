@@ -1,5 +1,5 @@
 use crate::compile::{WriteRegisters, WriteInstructions, token_to_register_id};
-use crate::execute::{Instruction, OP_MOVE, OP_INT_ADD, OP_INT_SUB};
+use crate::execute::{Instruction, OP_MOVE, OP_INT_ADD, OP_INT_SUB, OP_INT_EQ};
 use crate::token::{Token, tokenize};
 use crate::typing::DataType;
 
@@ -69,12 +69,84 @@ pub fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions:
 
 pub fn parse_if(parameters: &str, registers: &mut WriteRegisters, instructions: &mut WriteInstructions)
 -> Result<(), &'static str> {
-    Err("not implemented")
+
+    let mut tok = tokenize(parameters);
+
+    let b = token_to_register_id(registers, tok.next(), true)?;
+
+    let op = match tok.next() {
+        Token::Symbol(sym) => {
+            match sym {
+                "=" => OP_INT_EQ,
+                _ => return Err("unknown operator"),
+            }
+        }
+        Token::Integer(_) => {
+            return Err("operator required, found constant");
+        }
+        Token::Float(_) => {
+            return Err("operator required, found constant");
+        }
+        Token::Identifier(_) => {
+            return Err("operator required, found variable");
+        }
+        Token::CommandEnd => {
+            debug_assert!(false, "there should be no newlines in the parameters");
+            return Err("internal error");
+        }
+        Token::Done => {
+            return Err("operator required, found end of line");
+        }
+        Token::Err(()) => {
+            return Err("unknown error");
+        }
+    };
+
+    let c = token_to_register_id(registers, tok.next(), true)?;
+    match tok.next() {
+        Token::Done => {}
+        _ => return Err("currently the if command only takes 2 terms separated by an operator, i.e. A = 1"),
+    }
+
+    let b_type = registers.get_data_type(b);
+    let c_type = registers.get_data_type(c);
+    match (b_type, c_type) {
+        (DataType::Unknown, DataType::Unknown) => return Err("unknown type"),
+        (DataType::Unknown, data_type) => {
+            registers.set_data_type(b, data_type)?;
+        }
+        (data_type, DataType::Unknown) => {
+            registers.set_data_type(c, data_type)?;
+        }
+        (b_type, c_type) => {
+            if b_type != c_type {
+                return Err("type mismatch");
+            }
+        }
+    }
+
+    instructions.write(Instruction {opcode: op, reg_a: 0, reg_b: b, reg_c: c})
 }
 
-pub fn parse_end_if(parameters: &str, registers: &mut WriteRegisters, instructions: &mut WriteInstructions)
+pub fn parse_end_if(parameters: &str, _registers: &mut WriteRegisters, instructions: &mut WriteInstructions)
 -> Result<(), &'static str> {
-    Err("not implemented")
+    if parameters.len() > 0 {
+        return Err("end if doesn't take any parameters");
+    }
+
+    let instr = instructions.current_instructions();
+
+    for dist in 0..instr.len() {
+        let current = &mut instr[instr.len() - dist - 1];
+        if current.opcode == OP_INT_EQ && current.reg_a == 0 {
+            if dist > u8::MAX as usize {
+                return Err("too many instructions in branch");
+            }
+            current.reg_a = dist as u8;
+            return Ok(());
+        }
+    }
+    Err("end if without if")
 }
 
 #[cfg(test)]
@@ -207,5 +279,40 @@ mod tests {
         let registers = &mut ([Register::default(); 3]);
         let instructions = &mut ([Instruction::default(); 5]);
         compile("set r: 1 + 2.0", COMMANDS, PARSERS, registers, instructions).unwrap_err();
+    }
+
+    #[test]
+    fn if_equal() {
+        let registers = &mut ([Register::default(); 3]);
+        let instructions = &mut ([Instruction::default(); 2]);
+        let source = "
+            if r = 20
+                set r: 5
+            end if
+        ";
+        compile(source, COMMANDS, PARSERS, registers, instructions).unwrap();
+
+        assert_eq!(registers, &[0, 20, 5]);
+        assert_eq!(instructions, &[
+            Instruction {opcode: OP_INT_EQ, reg_a: 1, reg_b: 0, reg_c: 1}, // needs a not-equal?
+            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
+        ]);
+    }
+
+    #[test]
+    fn empty_if() {
+        let registers = &mut ([Register::default(); 3]);
+        let instructions = &mut ([Instruction::default(); 2]);
+        let source = "
+            if r = 20
+            end if
+        ";
+        compile(source, COMMANDS, PARSERS, registers, instructions).unwrap();
+
+        assert_eq!(registers, &[0, 20, 0]);
+        assert_eq!(instructions, &[
+            Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1}, // needs a not-equal?
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+        ]);
     }
 }

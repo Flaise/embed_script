@@ -19,6 +19,11 @@ impl<'a> WriteInstructions<'a> {
         self.next_index += 1;
         Ok(())
     }
+
+    pub fn current_instructions(&mut self) -> &mut [Instruction] {
+        debug_assert!(self.next_index <= self.inner.len());
+        &mut self.inner[..self.next_index]
+    }
 }
 
 #[derive(Copy, Clone)]

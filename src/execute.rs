@@ -26,9 +26,6 @@ pub const OP_INT_SUB: u8 = 8;
 
 fn validate_branch(inst_len: usize, counter: usize, reg_a: u8) -> Result<(), &'static str> {
     debug_assert!(inst_len > counter);
-    if reg_a == 0 {
-        return Err("comparison requires nonzero value in operand A");
-    }
     if inst_len - counter - 1 < reg_a as usize {
         return Err("program counter out of bounds");
     }
@@ -84,6 +81,9 @@ pub fn execute(starting_instruction: usize, registers: &mut [Register], instruct
                 if bv < cv {
                     counter += inst.reg_a as usize;
                 }
+            }
+            OP_DONE => {
+                return Ok(());
             }
             _ => return Err("invalid opcode"),
         }
@@ -169,4 +169,26 @@ mod tests {
             Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1},
         ]).unwrap_err();
     }
+
+    #[test]
+    fn jump_eq_empty() {
+        let registers = &mut [0, 0, 0];
+
+        // zero length jump could be optimized out
+        execute(0, registers, &[
+            Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+        ]).unwrap();
+
+        assert_eq!(registers, &[0, 0, 0]);
+
+        let registers = &mut [0, 0, 0];
+
+        execute(0, registers, &[
+            Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
+        ]).unwrap();
+
+        assert_eq!(registers, &[0, 0, 0]);
+    }
+
 }
