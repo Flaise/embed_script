@@ -40,7 +40,7 @@ impl<'a> ParseOp<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum ParseLine<'a> {
+pub enum ScanLine<'a> {
     Op {
         opline: OpLine<'a>,
         remainder: &'a str,
@@ -49,9 +49,9 @@ pub enum ParseLine<'a> {
     Err(ScriptError),
 }
 
-impl<'a> ParseLine<'a> {
+impl<'a> ScanLine<'a> {
     pub fn is_err(&self) -> bool {
-        if let ParseLine::Err(_) = self {
+        if let ScanLine::Err(_) = self {
             return true;
         }
         false
@@ -193,12 +193,12 @@ fn match_command<'a, 'b>(line: &'a str, check: &'b str) -> Option<&'a str> {
     Some(&line[..end])
 }
 
-pub fn parse_line<'a, 'b>(mut program: &'a str, commands: &'b [&str])
--> ParseLine<'a> {
+pub fn scan_line<'a, 'b>(mut program: &'a str, commands: &'b [&str])
+-> ScanLine<'a> {
     loop {
         match next_line(program) {
             Progress::Done => {
-                return ParseLine::Done;
+                return ScanLine::Done;
             }
             Progress::Next {line, remainder} => {
                 if line.len() == 0 {
@@ -216,7 +216,7 @@ pub fn parse_line<'a, 'b>(mut program: &'a str, commands: &'b [&str])
                                 break;
                             }
                             if c == b'\t' {
-                                return ParseLine::Err(ScriptError::TabInCommand);
+                                return ScanLine::Err(ScriptError::TabInCommand);
                             }
                         }
 
@@ -228,13 +228,13 @@ pub fn parse_line<'a, 'b>(mut program: &'a str, commands: &'b [&str])
                         }
 
                         let opline = OpLine {command_index, parameters};
-                        return ParseLine::Op {opline, remainder};
+                        return ScanLine::Op {opline, remainder};
                     }
                 }
-                return ParseLine::Err(UnknownCommand);
+                return ScanLine::Err(UnknownCommand);
             }
             Progress::Err(error) => {
-                return ParseLine::Err(error);
+                return ScanLine::Err(error);
             }
         }
     }
@@ -271,63 +271,63 @@ mod tests {
 
     #[test]
     fn effectively_empty() {
-        assert_eq!(parse_line("", COMMANDS), ParseLine::Done);
-        assert_eq!(parse_line(" ", COMMANDS), ParseLine::Done);
-        assert_eq!(parse_line("\t", COMMANDS), ParseLine::Done);
-        assert_eq!(parse_line(" \t", COMMANDS), ParseLine::Done);
-        assert_eq!(parse_line("\n \t\n", COMMANDS), ParseLine::Done);
+        assert_eq!(scan_line("", COMMANDS), ScanLine::Done);
+        assert_eq!(scan_line(" ", COMMANDS), ScanLine::Done);
+        assert_eq!(scan_line("\t", COMMANDS), ScanLine::Done);
+        assert_eq!(scan_line(" \t", COMMANDS), ScanLine::Done);
+        assert_eq!(scan_line("\n \t\n", COMMANDS), ScanLine::Done);
     }
 
     #[test]
     fn non_ascii_bad() {
-        assert_eq!(parse_line("\u{0306}", COMMANDS), ParseLine::Err(NonAsciiCharacter));
+        assert_eq!(scan_line("\u{0306}", COMMANDS), ScanLine::Err(NonAsciiCharacter));
     }
 
     #[test]
     fn find_commands() {
-        assert_eq!(parse_line("if something > 5", COMMANDS), ParseLine::Op {
+        assert_eq!(scan_line("if something > 5", COMMANDS), ScanLine::Op {
             opline: OpLine {
                 command_index: 0,
                 parameters: "something > 5",
             },
             remainder: "",
         });
-        assert_eq!(parse_line("else if something < 7", COMMANDS), ParseLine::Op {
+        assert_eq!(scan_line("else if something < 7", COMMANDS), ScanLine::Op {
             opline: OpLine {
                 command_index: 1,
                 parameters: "something < 7",
             },
             remainder: "",
         });
-        assert_eq!(parse_line("end if", COMMANDS), ParseLine::Op {
+        assert_eq!(scan_line("end if", COMMANDS), ScanLine::Op {
             opline: OpLine {
                 command_index: 2,
                 parameters: "",
             },
             remainder: "",
         });
-        assert_eq!(parse_line("set r: 20", COMMANDS), ParseLine::Op {
+        assert_eq!(scan_line("set r: 20", COMMANDS), ScanLine::Op {
             opline: OpLine {
                 command_index: 3,
                 parameters: "r: 20",
             },
             remainder: "",
         });
-        assert_eq!(parse_line("set y: 7 - 40", COMMANDS), ParseLine::Op {
+        assert_eq!(scan_line("set y: 7 - 40", COMMANDS), ScanLine::Op {
             opline: OpLine {
                 command_index: 3,
                 parameters: "y: 7 - 40",
             },
             remainder: "",
         });
-        assert_eq!(parse_line("event do_something", COMMANDS), ParseLine::Op {
+        assert_eq!(scan_line("event do_something", COMMANDS), ScanLine::Op {
             opline: OpLine {
                 command_index: 4,
                 parameters: "do_something",
             },
             remainder: "",
         });
-        assert_eq!(parse_line("end event", COMMANDS), ParseLine::Op {
+        assert_eq!(scan_line("end event", COMMANDS), ScanLine::Op {
             opline: OpLine {
                 command_index: 5,
                 parameters: "",
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn case_insensitive() {
-        assert_eq!(parse_line("evENt do_soMEthing", COMMANDS), ParseLine::Op {
+        assert_eq!(scan_line("evENt do_soMEthing", COMMANDS), ScanLine::Op {
             opline: OpLine {
                 command_index: 4,
                 parameters: "do_soMEthing",
@@ -349,21 +349,21 @@ mod tests {
 
     #[test]
     fn indentation() {
-        assert_eq!(parse_line("    set y: 7 - 40", COMMANDS), ParseLine::Op {
+        assert_eq!(scan_line("    set y: 7 - 40", COMMANDS), ScanLine::Op {
             opline: OpLine {
                 command_index: 3,
                 parameters: "y: 7 - 40",
             },
             remainder: "",
         });
-        assert_eq!(parse_line("\tset y: 7 - 40  ", COMMANDS), ParseLine::Op {
+        assert_eq!(scan_line("\tset y: 7 - 40  ", COMMANDS), ScanLine::Op {
             opline: OpLine {
                 command_index: 3,
                 parameters: "y: 7 - 40",
             },
             remainder: "",
         });
-        assert_eq!(parse_line("  set y: 7 - 40\t", COMMANDS), ParseLine::Op {
+        assert_eq!(scan_line("  set y: 7 - 40\t", COMMANDS), ScanLine::Op {
             opline: OpLine {
                 command_index: 3,
                 parameters: "y: 7 - 40",
@@ -374,7 +374,7 @@ mod tests {
 
     #[test]
     fn extra_space_around_parameter() {
-        assert_eq!(parse_line("if   something = 99", COMMANDS), ParseLine::Op {
+        assert_eq!(scan_line("if   something = 99", COMMANDS), ScanLine::Op {
             opline: OpLine {
                 command_index: 0,
                 parameters: "  something = 99", // need leading whitespace for some commands
@@ -382,7 +382,7 @@ mod tests {
             remainder: "",
         });
 
-        assert_eq!(parse_line("if something = 99\t ", COMMANDS), ParseLine::Op {
+        assert_eq!(scan_line("if something = 99\t ", COMMANDS), ScanLine::Op {
             opline: OpLine {
                 command_index: 0,
                 parameters: "something = 99",
@@ -393,7 +393,7 @@ mod tests {
 
     #[test]
     fn extra_space_inside_command() {
-        assert_eq!(parse_line("else  if thing = other", COMMANDS), ParseLine::Op {
+        assert_eq!(scan_line("else  if thing = other", COMMANDS), ScanLine::Op {
             opline: OpLine {
                 command_index: 1,
                 parameters: "thing = other",
@@ -434,15 +434,15 @@ mod tests {
 
     #[test]
     fn tab_after_command_bad() {
-        assert!(parse_line("else if\tthing = other", COMMANDS).is_err());
-        assert!(parse_line("else if \tthing = other", COMMANDS).is_err());
-        assert!(parse_line("else if\t thing = other", COMMANDS).is_err());
-        assert!(parse_line("else if\t\tthing = other", COMMANDS).is_err());
+        assert!(scan_line("else if\tthing = other", COMMANDS).is_err());
+        assert!(scan_line("else if \tthing = other", COMMANDS).is_err());
+        assert!(scan_line("else if\t thing = other", COMMANDS).is_err());
+        assert!(scan_line("else if\t\tthing = other", COMMANDS).is_err());
     }
 
     #[test]
     fn trailing_tab_ok() {
-        assert_eq!(parse_line("end if\t", COMMANDS), ParseLine::Op {
+        assert_eq!(scan_line("end if\t", COMMANDS), ScanLine::Op {
             opline: OpLine {
                 command_index: 2,
                 parameters: "",

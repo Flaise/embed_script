@@ -1,4 +1,4 @@
-use crate::parse::{OpLine, ParseOp, ScriptError};
+use crate::scan::{OpLine, ParseOp, ScriptError};
 use crate::script::{Script, script_next, Commands};
 
 const ENV: Commands = &["version"];

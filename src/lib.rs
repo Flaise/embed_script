@@ -3,7 +3,7 @@
 pub mod compile;
 pub mod execute;
 pub mod parameter;
-mod parse;
+mod scan;
 mod script;
 mod token;
 mod typing;

@@ -1,4 +1,4 @@
-use crate::parse::{ParseOp, parse_line, ParseLine};
+use crate::scan::{ParseOp, scan_line, ScanLine};
 
 pub struct Script<'a> {
     pub source: &'a str,
@@ -14,10 +14,10 @@ pub type Commands<'a> = &'a [&'a str];
 
 pub fn script_next<'a, 'b>(script: &'a mut Script, commands: Commands<'b>)
 -> ParseOp<'a> {
-    match parse_line(&script.source, commands) {
-        ParseLine::Done => ParseOp::Done,
-        ParseLine::Err(error) => ParseOp::Err(error),
-        ParseLine::Op {opline, remainder} => {
+    match scan_line(&script.source, commands) {
+        ScanLine::Done => ParseOp::Done,
+        ScanLine::Err(error) => ParseOp::Err(error),
+        ScanLine::Op {opline, remainder} => {
             script.source = remainder;
             ParseOp::Op(opline)
         }
@@ -26,7 +26,7 @@ pub fn script_next<'a, 'b>(script: &'a mut Script, commands: Commands<'b>)
 
 #[cfg(test)]
 mod tests {
-    use crate::parse::OpLine;
+    use crate::scan::OpLine;
     use super::*;
 
     const ENV: Commands = &[

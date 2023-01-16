@@ -1,5 +1,5 @@
 use core::convert::TryInto;
-use crate::parse::ParseOp;
+use crate::scan::ParseOp;
 use crate::execute::{Instruction, OP_DONE};
 use crate::script::{Script, script_next, Commands};
 use crate::token::Token;
