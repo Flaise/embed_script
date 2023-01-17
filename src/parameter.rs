@@ -3,19 +3,19 @@ use crate::execute::{Instruction, OP_MOVE, OP_INT_ADD, OP_INT_SUB, OP_INT_EQ, OP
 use crate::token::{Token, tokenize};
 use crate::typing::DataType;
 
-fn match_register_types(registers: &mut WriteRegisters, a: u8, b: u8)
--> Result<(), &'static str> {
-    let a_type = registers.get_data_type(a);
-    let b_type = registers.get_data_type(b);
+fn match_register_types(registers: &mut WriteRegisters, ids: &[u8]) -> Result<(), &'static str> {
+    for &r in ids {
+        let data_type = registers.get_data_type(r);
+        if data_type == DataType::Unknown {
+            continue;
+        }
 
-    if a_type != DataType::Unknown {
-        registers.set_data_type(b, a_type)?;
+        for &r2 in ids {
+            registers.set_data_type(r2, data_type)?;
+        }
+        return Ok(());
     }
-    if b_type != DataType::Unknown {
-        registers.set_data_type(a, b_type)?;
-    }
-
-    Ok(())
+    Err("unknown type")
 }
 
 pub fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions: &mut WriteInstructions)
@@ -31,7 +31,6 @@ pub fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions:
     }
 
     let b = token_to_register_id(registers, tok.next(), true)?;
-    match_register_types(registers, dest, b)?;
 
     let op = match tok.next() {
         Token::Symbol(sym) => {
@@ -55,6 +54,8 @@ pub fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions:
             return Err("internal error");
         }
         Token::Done => {
+            match_register_types(registers, &[dest, b])?;
+
             return instructions.write(Instruction {opcode: OP_MOVE, reg_a: dest, reg_b: b, reg_c: 0});
         }
         Token::Err(()) => {
@@ -63,8 +64,7 @@ pub fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions:
     };
 
     let c = token_to_register_id(registers, tok.next(), true)?;
-    match_register_types(registers, dest, c)?;
-    match_register_types(registers, b, c)?;
+    match_register_types(registers, &[dest, b, c])?;
 
     match tok.next() {
         Token::Done => {}
@@ -116,7 +116,7 @@ pub fn parse_if(parameters: &str, registers: &mut WriteRegisters, instructions: 
         _ => return Err("currently the if command only takes 2 terms separated by an operator, i.e. A = 1"),
     }
 
-    match_register_types(registers, b, c)?;
+    match_register_types(registers, &[b, c])?;
 
     // let data_type = registers.get_data_type(b);
     // pick correct opcode type
@@ -154,12 +154,12 @@ pub fn parse_end_if(parameters: &str, _registers: &mut WriteRegisters, instructi
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::compile::{Parser, compile};
-    use crate::execute::{OP_MOVE, OP_INT_ADD, OP_INT_SUB, OP_DONE, execute};
+    use crate::execute::{OP_DONE, execute};
     use crate::parameter::{parse_if, parse_end_if, parse_set};
     use crate::script::Commands;
     use crate::typing::{Register, float_to_register, int_to_register};
-    use super::*;
 
     const COMMANDS: Commands = &[
         "if",
@@ -237,9 +237,9 @@ mod tests {
     fn addition() {
         let registers = &mut ([Register::default(); 3]);
         let instructions = &mut ([Instruction::default(); 1]);
-        compile("set r: a + b", COMMANDS, PARSERS, registers, instructions).unwrap();
+        compile("set r: a + 7", COMMANDS, PARSERS, registers, instructions).unwrap();
 
-        assert_eq!(registers, &[0, 0, 0]);
+        assert_eq!(registers, &[0, 0, 7]);
         assert_eq!(instructions, &[Instruction {opcode: OP_INT_ADD, reg_a: 0, reg_b: 1, reg_c: 2}]);
     }
 
@@ -257,9 +257,9 @@ mod tests {
     fn subtraction() {
         let registers = &mut ([Register::default(); 3]);
         let instructions = &mut ([Instruction::default(); 1]);
-        compile("set r: a - b", COMMANDS, PARSERS, registers, instructions).unwrap();
+        compile("set r: a - 7", COMMANDS, PARSERS, registers, instructions).unwrap();
 
-        assert_eq!(registers, &[0, 0, 0]);
+        assert_eq!(registers, &[0, 0, 7]);
         assert_eq!(instructions, &[Instruction {opcode: OP_INT_SUB, reg_a: 0, reg_b: 1, reg_c: 2}]);
     }
 
