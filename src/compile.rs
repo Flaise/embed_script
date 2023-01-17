@@ -27,16 +27,16 @@ impl<'a> WriteInstructions<'a> {
 }
 
 #[derive(Copy, Clone)]
-struct RegisterType {
+struct RegisterInfo {
     name: [u8; 50],
     name_len: u8,
     data_type: DataType,
     constant: bool,
 }
 
-impl Default for RegisterType {
+impl Default for RegisterInfo {
     fn default() -> Self {
-        RegisterType {
+        RegisterInfo {
             name: [0; 50],
             name_len: Default::default(),
             data_type: Default::default(),
@@ -47,8 +47,8 @@ impl Default for RegisterType {
 
 pub struct WriteRegisters<'a, 'b> {
     inner: &'a mut [Register],
-    metadata: &'b mut [RegisterType],
-    next_variable: usize,
+    metadata: &'b mut [RegisterInfo],
+    next_register: usize,
 }
 
 fn into_inst_index(index: usize) -> Result<u8, &'static str> {
@@ -59,19 +59,19 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
 
     #[cfg(test)]
     fn name_at(&self, id: u8) -> &[u8] {
-        debug_assert!(self.next_variable > id as usize);
+        debug_assert!(self.next_register > id as usize);
 
         let meta = &self.metadata[id as usize];
         &meta.name[..meta.name_len as usize]
     }
 
     fn write_register(&mut self, value: u32) -> Result<u8, &'static str> {
-        if self.next_variable >= self.inner.len() {
+        if self.next_register >= self.inner.len() {
             return Err("too many variables/constants");
         }
-        let id = into_inst_index(self.next_variable)?;
-        self.inner[self.next_variable] = value;
-        self.next_variable += 1;
+        let id = into_inst_index(self.next_register)?;
+        self.inner[self.next_register] = value;
+        self.next_register += 1;
         Ok(id)
     }
 
@@ -106,7 +106,7 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
         }
         let name_bytes = name.as_bytes();
 
-        for i in 0..self.next_variable {
+        for i in 0..self.next_register {
             let meta = &self.metadata[i];
             let meta_name = &meta.name[..meta.name_len as usize];
 
@@ -131,7 +131,7 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
     fn write_constant(&mut self, value: u32, data_type: DataType) -> Result<u8, &'static str> {
         debug_assert!(data_type != DataType::Unknown, "all constants should have a known type");
 
-        for i in 0..self.next_variable {
+        for i in 0..self.next_register {
             let meta = &self.metadata[i];
             if meta.constant && meta.data_type == data_type && self.inner[i] == value {
                 return into_inst_index(i);
@@ -211,11 +211,11 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser], registers: 
     let mut script = Script::new(source);
     let instructions = &mut WriteInstructions {next_index: 0, inner: instructions};
 
-    let metadata = &mut ([RegisterType::default(); 256]);
+    let metadata = &mut ([RegisterInfo::default(); 256]);
     let registers = &mut WriteRegisters {
         inner: registers,
         metadata,
-        next_variable: 0,
+        next_register: 0,
     };
 
     let mut prev_len = 0;
@@ -293,17 +293,17 @@ mod tests {
     #[test]
     fn write_same_variable() {
         let registers = &mut ([0; 2]);
-        let metadata = &mut ([RegisterType::default(); 256]);
+        let metadata = &mut ([RegisterInfo::default(); 256]);
         let wr = &mut WriteRegisters {
             inner: registers,
             metadata,
-            next_variable: 0,
+            next_register: 0,
         };
 
         wr.write_variable("asdf", DataType::Unknown).unwrap();
         wr.write_variable("asdf", DataType::Unknown).unwrap();
 
-        assert_eq!(wr.next_variable, 1);
+        assert_eq!(wr.next_register, 1);
         assert_eq!(wr.name_at(0), b"asdf");
         assert_eq!(registers, &[0, 0]);
     }
@@ -311,17 +311,17 @@ mod tests {
     #[test]
     fn write_same_variable_case_insensitive() {
         let registers = &mut ([0; 2]);
-        let metadata = &mut ([RegisterType::default(); 256]);
+        let metadata = &mut ([RegisterInfo::default(); 256]);
         let wr = &mut WriteRegisters {
             inner: registers,
             metadata,
-            next_variable: 0,
+            next_register: 0,
         };
 
         wr.write_variable("asdf", DataType::Unknown).unwrap();
         wr.write_variable("ASDF", DataType::Unknown).unwrap();
 
-        assert_eq!(wr.next_variable, 1);
+        assert_eq!(wr.next_register, 1);
         assert_eq!(wr.name_at(0), b"asdf");
         assert_eq!(registers, &[0, 0]);
     }
