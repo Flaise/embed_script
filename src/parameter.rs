@@ -3,6 +3,21 @@ use crate::execute::{Instruction, OP_MOVE, OP_INT_ADD, OP_INT_SUB, OP_INT_EQ, OP
 use crate::token::{Token, tokenize};
 use crate::typing::DataType;
 
+fn match_register_types(registers: &mut WriteRegisters, a: u8, b: u8)
+-> Result<(), &'static str> {
+    let a_type = registers.get_data_type(a);
+    let b_type = registers.get_data_type(b);
+
+    if a_type != DataType::Unknown {
+        registers.set_data_type(b, a_type)?;
+    }
+    if b_type != DataType::Unknown {
+        registers.set_data_type(a, b_type)?;
+    }
+
+    Ok(())
+}
+
 pub fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions: &mut WriteInstructions)
 -> Result<(), &'static str> {
 
@@ -16,11 +31,7 @@ pub fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions:
     }
 
     let b = token_to_register_id(registers, tok.next(), true)?;
-
-    let data_type = registers.get_data_type(b);
-    if data_type != DataType::Unknown {
-        registers.set_data_type(dest, data_type)?;
-    }
+    match_register_types(registers, dest, b)?;
 
     let op = match tok.next() {
         Token::Symbol(sym) => {
@@ -52,12 +63,8 @@ pub fn parse_set(parameters: &str, registers: &mut WriteRegisters, instructions:
     };
 
     let c = token_to_register_id(registers, tok.next(), true)?;
-
-    let data_type = registers.get_data_type(c);
-    if data_type != DataType::Unknown {
-        registers.set_data_type(dest, data_type)?;
-        registers.set_data_type(b, data_type)?;
-    }
+    match_register_types(registers, dest, c)?;
+    match_register_types(registers, b, c)?;
 
     match tok.next() {
         Token::Done => {}
@@ -109,22 +116,10 @@ pub fn parse_if(parameters: &str, registers: &mut WriteRegisters, instructions: 
         _ => return Err("currently the if command only takes 2 terms separated by an operator, i.e. A = 1"),
     }
 
-    let b_type = registers.get_data_type(b);
-    let c_type = registers.get_data_type(c);
-    match (b_type, c_type) {
-        (DataType::Unknown, DataType::Unknown) => return Err("unknown type"),
-        (DataType::Unknown, data_type) => {
-            registers.set_data_type(b, data_type)?;
-        }
-        (data_type, DataType::Unknown) => {
-            registers.set_data_type(c, data_type)?;
-        }
-        (b_type, c_type) => {
-            if b_type != c_type {
-                return Err("type mismatch");
-            }
-        }
-    }
+    match_register_types(registers, b, c)?;
+
+    // let data_type = registers.get_data_type(b);
+    // pick correct opcode type
 
     instructions.write(Instruction {opcode: op, reg_a: 0, reg_b: b, reg_c: c})
 }

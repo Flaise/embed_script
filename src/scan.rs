@@ -94,7 +94,7 @@ fn next_line(program: &str) -> Progress {
     }
 
     let line = program.trim();
-    let remainder = &program[0..0]; // need zero-length slice
+    let remainder = Default::default();
     return Progress::Next {line, remainder};
 }
 
