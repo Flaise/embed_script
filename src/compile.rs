@@ -1,4 +1,5 @@
 use core::convert::TryInto;
+use core::ops::Range;
 use crate::scan::ScanOp;
 use crate::execute::{Instruction, OP_DONE};
 use crate::script::{Script, script_next, Commands};
@@ -26,51 +27,147 @@ impl<'a> WriteInstructions<'a> {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, Default)]
 struct RegisterInfo {
-    name: [u8; 50],
-    name_len: u8,
     data_type: DataType,
     constant: bool,
 }
 
-impl Default for RegisterInfo {
-    fn default() -> Self {
-        RegisterInfo {
-            name: [0; 50],
-            name_len: Default::default(),
-            data_type: Default::default(),
-            constant: Default::default(),
+const NUM_REGISTERS: usize = 256;
+
+// const EVENT_BIT: u8 = 0b1000_0000;
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+struct NameSpec {
+    start: u16,
+    end: u16,
+    /// First bit == 1 -> event, otherwise -> register.
+    register_or_event: u16,
+}
+
+impl NameSpec {
+    fn new_event(start: u16, end: u16, event_location: u16) -> NameSpec {
+        todo!();
+    }
+    fn new_register(start: u16, end: u16, register_id: u8) -> NameSpec {
+        NameSpec {
+            start,
+            end,
+            register_or_event: register_id as u16,
         }
+    }
+
+    fn range(self) -> Range<usize> {
+        self.start as usize..self.end as usize
+    }
+
+    fn pick_bytes(self, bytes: &[u8]) -> &[u8] {
+        &bytes[self.range()]
+    }
+
+    fn register_id(self) -> Option<u8> {
+        let [a, b] = self.register_or_event.to_be_bytes();
+        if a == 0 {
+            return Some(b);
+        }
+        None
+    }
+
+    fn event_location(self) -> Option<u16> {
+        todo!();
     }
 }
 
-pub struct WriteRegisters<'a, 'b> {
-    inner: &'a mut [Register],
-    metadata: &'b mut [RegisterInfo],
-    next_register: usize,
+// struct MemoryCondensed<'a> {
+//     num_names: u16,
+//     bytes: &'a [u8],
+// }
+
+// struct MemoryCompile<'a> {
+//     names: [NameSpec; NUM_REGISTERS + 50],
+//     registers: [Register; NUM_REGISTERS],
+//     bytes: &'a [u8],
+// }
+
+#[derive(Debug)]
+pub struct Compilation {
+    pub registers: [Register; NUM_REGISTERS],
+    metadata: [RegisterInfo; NUM_REGISTERS],
+    names: [NameSpec; NUM_REGISTERS + 50],
+    pub other_bytes: [u8; 1024],
+    pub next_register: usize,
+    pub next_name: usize,
+    pub next_byte: usize,
+
+    // TODO: instructions
+}
+
+impl Default for Compilation {
+    fn default() -> Self {
+        Compilation {
+            registers: [0; NUM_REGISTERS],
+            metadata: [RegisterInfo::default(); NUM_REGISTERS],
+            names: [NameSpec::default(); NUM_REGISTERS + 50],
+            other_bytes: [0; 1024],
+            next_register: 0,
+            next_name: 0,
+            next_byte: 0,
+        }
+    }
 }
 
 fn into_inst_index(index: usize) -> Result<u8, &'static str> {
     index.try_into().map_err(|_err| "too many registers to index into")
 }
 
-impl<'a, 'b> WriteRegisters<'a, 'b> {
+impl Compilation {
 
-    #[cfg(test)]
-    fn name_at(&self, id: u8) -> &[u8] {
-        debug_assert!(self.next_register > id as usize);
+    fn write_name(&mut self, value: &[u8], register_or_event: u16) {
+        for i in 0..self.next_name {
+            let spec = &self.names[i];
+            let name = spec.pick_bytes(&self.other_bytes);
+            if name.eq_ignore_ascii_case(value) {
+                self.names[self.next_name] = NameSpec {
+                    start: spec.start,
+                    end: spec.end,
+                    register_or_event,
+                };
 
-        let meta = &self.metadata[id as usize];
-        &meta.name[..meta.name_len as usize]
+                return;
+            }
+        }
+
+        let len = value.len();
+        let start = self.next_byte;
+        let end = self.next_byte + len;
+        self.other_bytes[start..end].copy_from_slice(value);
+        self.next_byte += len;
+
+        self.names[self.next_name] = NameSpec {
+            start: start as u16,
+            end: end as u16,
+            register_or_event,
+        };
+        self.next_name += 1;
+    }
+
+    fn register_name(&self, id: u8) -> &[u8] {
+        for name in self.names {
+            if let Some(other) = name.register_id() {
+                if other == id {
+                    return name.pick_bytes(&self.other_bytes);
+                }
+            }
+        }
+        Default::default()
     }
 
     fn write_register(&mut self, value: u32) -> Result<u8, &'static str> {
-        if self.next_register >= self.inner.len() {
+        if self.next_register >= self.registers.len() {
             return Err("too many variables/constants");
         }
         let id = into_inst_index(self.next_register)?;
-        self.inner[self.next_register] = value;
+        self.registers[self.next_register] = value;
         self.next_register += 1;
         Ok(id)
     }
@@ -99,7 +196,7 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
 
     pub fn write_variable(&mut self, name: &str, data_type: DataType) -> Result<u8, &'static str> {
         if name.contains(|c: char| c.is_whitespace()) {
-            return Err("a variable name can't contain spaces");
+            return Err("a variable name can't contain spaces or tabs");
         }
         if name.len() > 50 {
             return Err("a variable name must be 50 characters or less");
@@ -108,21 +205,27 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
 
         for i in 0..self.next_register {
             let meta = &self.metadata[i];
-            let meta_name = &meta.name[..meta.name_len as usize];
+            let found_name = self.register_name(i as u8);
 
-            if !meta.constant && meta_name.eq_ignore_ascii_case(name_bytes) {
-                if data_type != DataType::Unknown && meta.data_type != data_type {
-                    return Err("type mismatch");
+            if !meta.constant && found_name.eq_ignore_ascii_case(name_bytes) {
+                if data_type != DataType::Unknown {
+                    if meta.data_type != data_type {
+                        return Err("type mismatch");
+                    }
+
+                    // TODO:
+                    // meta.data_type = data_type;
                 }
+
                 return into_inst_index(i);
             }
         }
 
         let id = self.write_register(0)?;
         let meta = &mut self.metadata[id as usize];
-        meta.name[..name_bytes.len()].copy_from_slice(name_bytes);
-        meta.name_len = name.len() as u8;
         meta.data_type = data_type;
+
+        self.write_name(name_bytes, id as u16);
 
         debug_assert_eq!(self.get_data_type(id), data_type);
         Ok(id)
@@ -133,7 +236,7 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
 
         for i in 0..self.next_register {
             let meta = &self.metadata[i];
-            if meta.constant && meta.data_type == data_type && self.inner[i] == value {
+            if meta.constant && meta.data_type == data_type && self.registers[i] == value {
                 return into_inst_index(i);
             }
         }
@@ -166,7 +269,7 @@ impl<'a, 'b> WriteRegisters<'a, 'b> {
     }
 }
 
-pub fn token_to_register_id(registers: &mut WriteRegisters, token: Token, constant_allowed: bool)
+pub fn token_to_register_id(registers: &mut Compilation, token: Token, constant_allowed: bool)
 -> Result<u8, &'static str> {
     match token {
         Token::Symbol(_) => {
@@ -202,21 +305,16 @@ pub fn token_to_register_id(registers: &mut WriteRegisters, token: Token, consta
     }
 }
 
-pub type Parser = fn (parameters: &str, registers: &mut WriteRegisters, instructions: &mut WriteInstructions) -> Result<(), &'static str>;
+pub type Parser = fn (parameters: &str, registers: &mut Compilation, instructions: &mut WriteInstructions) -> Result<(), &'static str>;
 
-pub fn compile(source: &str, commands: Commands, parsers: &[Parser], registers: &mut [Register], instructions: &mut [Instruction])
--> Result<(), &'static str> {
+pub fn compile(source: &str, commands: Commands, parsers: &[Parser], instructions: &mut [Instruction])
+-> Result<Compilation, &'static str> {
     debug_assert!(commands.len() == parsers.len());
 
     let mut script = Script::new(source);
     let instructions = &mut WriteInstructions {next_index: 0, inner: instructions};
 
-    let metadata = &mut ([RegisterInfo::default(); 256]);
-    let registers = &mut WriteRegisters {
-        inner: registers,
-        metadata,
-        next_register: 0,
-    };
+    let mut compilation = Compilation::default();
 
     let mut prev_len = 0;
 
@@ -231,7 +329,7 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser], registers: 
         match parseop {
             ScanOp::Op(op) => {
                 if let Some(parser) = parsers.get(op.command_index) {
-                    parser(op.parameters, registers, instructions)?;
+                    parser(op.parameters, &mut compilation, instructions)?;
                 } else {
                     return Err("internal error: invalid command index");
                 }
@@ -245,7 +343,7 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser], registers: 
                         reg_c: 0,
                     })?;
                 }
-                return Ok(());
+                return Ok(compilation);
             }
             ScanOp::Err(error) => {
                 return Err(error.static_display());
@@ -264,7 +362,7 @@ mod tests {
         "set",
     ];
 
-    fn no(_: &str, _: &mut WriteRegisters, _: &mut WriteInstructions) -> Result<(), &'static str> {
+    fn no(_: &str, _: &mut Compilation, _: &mut WriteInstructions) -> Result<(), &'static str> {
         panic!("should not be called");
     }
 
@@ -275,55 +373,75 @@ mod tests {
     ];
 
     #[test]
-    fn empty_to_empty_no_error() {
-        let registers = &mut ([Register::default(); 2]);
-        let instructions = &mut [];
-        compile("   ", COMMANDS, PARSERS, registers, instructions).unwrap();
-    }
-
-    #[test]
     fn empty_termination() {
-        let registers = &mut ([Register::default(); 2]);
-        let instructions = &mut ([Instruction::default(); 2]);
-        compile("\t \n\t ", COMMANDS, PARSERS, registers, instructions).unwrap();
+        let instructions = &mut [Instruction::default(); 2];
+        compile("\t \n\t ", COMMANDS, PARSERS, instructions).unwrap();
 
         assert_eq!(instructions[0], Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0});
     }
 
     #[test]
     fn write_same_variable() {
-        let registers = &mut ([0; 2]);
-        let metadata = &mut ([RegisterInfo::default(); 256]);
-        let wr = &mut WriteRegisters {
-            inner: registers,
-            metadata,
-            next_register: 0,
-        };
-
+        let mut wr = Compilation::default();
         wr.write_variable("asdf", DataType::Unknown).unwrap();
         wr.write_variable("asdf", DataType::Unknown).unwrap();
 
         assert_eq!(wr.next_register, 1);
-        assert_eq!(wr.name_at(0), b"asdf");
-        assert_eq!(registers, &[0, 0]);
+        assert_eq!(wr.register_name(0), b"asdf");
+        assert_eq!(&wr.registers[0..2], &[0, 0]);
     }
 
     #[test]
     fn write_same_variable_case_insensitive() {
-        let registers = &mut ([0; 2]);
-        let metadata = &mut ([RegisterInfo::default(); 256]);
-        let wr = &mut WriteRegisters {
-            inner: registers,
-            metadata,
-            next_register: 0,
-        };
-
+        let mut wr = Compilation::default();
         wr.write_variable("asdf", DataType::Unknown).unwrap();
         wr.write_variable("ASDF", DataType::Unknown).unwrap();
 
         assert_eq!(wr.next_register, 1);
-        assert_eq!(wr.name_at(0), b"asdf");
-        assert_eq!(registers, &[0, 0]);
+        assert_eq!(wr.register_name(0), b"asdf");
+        assert_eq!(&wr.registers[0..2], &[0, 0]);
+    }
+
+    #[test]
+    fn single_letter_names() {
+        let mut wr = Compilation::default();
+
+        wr.write_name(b"a", 0);
+        assert_eq!(wr.names[0], NameSpec {start: 0, end: 1, register_or_event: 0});
+        assert_eq!(wr.names[0].register_id(), Some(0));
+        assert_eq!(wr.register_name(0), b"a");
+
+        wr.write_name(b"b", 1);
+        assert_eq!(wr.names[0], NameSpec {start: 0, end: 1, register_or_event: 0});
+        assert_eq!(wr.names[1], NameSpec {start: 1, end: 2, register_or_event: 1});
+        assert_eq!(wr.register_name(0), b"a");
+        assert_eq!(wr.register_name(1), b"b");
+
+        assert_eq!(&wr.other_bytes[0..2], b"ab");
+    }
+
+    #[test]
+    fn long_names() {
+        let mut wr = Compilation::default();
+
+        wr.write_name(b"abc", 0);
+        wr.write_name(b"rqs", 1);
+        assert_eq!(wr.register_name(0), b"abc");
+        assert_eq!(wr.register_name(1), b"rqs");
+
+        assert_eq!(&wr.other_bytes[0..6], b"abcrqs");
+    }
+
+    #[test]
+    fn skip_register() {
+        let mut wr = Compilation::default();
+
+        wr.write_name(b"abc", 0);
+        wr.write_name(b"rqs", 2);
+        assert_eq!(wr.register_name(0), b"abc");
+        assert_eq!(wr.register_name(2), b"rqs");
+
+        assert_eq!(&wr.other_bytes[0..6], b"abcrqs");
     }
 
 }
