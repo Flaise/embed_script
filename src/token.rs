@@ -67,6 +67,7 @@ pub fn tokenize<'a>(source: &'a str) -> Tokenizer<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct Tokenizer<'a> {
     source: &'a [u8],
     in_command: bool,

@@ -34,7 +34,8 @@ end event
 state and outputs.
 2. A program always takes up an amount of memory that is known ahead of time so all memory can be
 statically allocated.
-3. A program is guaranteed to complete execution without hanging indefinitely.
+3. A program is guaranteed to complete execution - a program won't hang indefinitely because there
+is no infinite looping or recursion.
 4. Denial of Service and memory access attacks should be difficult if not practically impossible to
 pull off, making it generally safe to run code that comes from untrusted sources (i.e. the
 internet).

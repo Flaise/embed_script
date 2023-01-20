@@ -8,7 +8,7 @@ use crate::typing::{DataType, Register, int_to_register, float_to_register};
 
 pub struct WriteInstructions<'a> {
     inner: &'a mut [Instruction],
-    next_index: usize,
+    pub next_index: usize,
 }
 
 impl<'a> WriteInstructions<'a> {
@@ -35,7 +35,7 @@ struct RegisterInfo {
 
 const NUM_REGISTERS: usize = 256;
 
-// const EVENT_BIT: u8 = 0b1000_0000;
+const EVENT_BIT_16: u16 = 0b1000_0000_0000_0000;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 struct NameSpec {
@@ -46,17 +46,6 @@ struct NameSpec {
 }
 
 impl NameSpec {
-    fn new_event(start: u16, end: u16, event_location: u16) -> NameSpec {
-        todo!();
-    }
-    fn new_register(start: u16, end: u16, register_id: u8) -> NameSpec {
-        NameSpec {
-            start,
-            end,
-            register_or_event: register_id as u16,
-        }
-    }
-
     fn range(self) -> Range<usize> {
         self.start as usize..self.end as usize
     }
@@ -74,20 +63,15 @@ impl NameSpec {
     }
 
     fn event_location(self) -> Option<u16> {
-        todo!();
+        if self.register_or_event & EVENT_BIT_16 == 0 {
+            let [a, _] = self.register_or_event.to_be_bytes();
+            debug_assert_eq!(a, 0);
+            return None;
+        }
+        let location = self.register_or_event & !EVENT_BIT_16;
+        Some(location)
     }
 }
-
-// struct MemoryCondensed<'a> {
-//     num_names: u16,
-//     bytes: &'a [u8],
-// }
-
-// struct MemoryCompile<'a> {
-//     names: [NameSpec; NUM_REGISTERS + 50],
-//     registers: [Register; NUM_REGISTERS],
-//     bytes: &'a [u8],
-// }
 
 #[derive(Debug)]
 pub struct Compilation {
@@ -122,7 +106,27 @@ fn into_inst_index(index: usize) -> Result<u8, &'static str> {
 
 impl Compilation {
 
+    pub fn register_by_name(&self, check: &[u8]) -> Option<u8> {
+        for name in self.names.iter().take(self.next_name) {
+            if name.pick_bytes(&self.other_bytes).eq_ignore_ascii_case(check) {
+                return name.register_id();
+            }
+        }
+        None
+    }
+
+    pub fn event_by_name(&self, check: &[u8]) -> Option<u16> {
+        for name in self.names.iter().take(self.next_name) {
+            if name.pick_bytes(&self.other_bytes).eq_ignore_ascii_case(check) {
+                return name.event_location();
+            }
+        }
+        None
+    }
+
     fn write_name(&mut self, value: &[u8], register_or_event: u16) {
+        debug_assert!(value.len() <= 50);
+
         for i in 0..self.next_name {
             let spec = &self.names[i];
             let name = spec.pick_bytes(&self.other_bytes);
@@ -152,7 +156,7 @@ impl Compilation {
     }
 
     fn register_name(&self, id: u8) -> &[u8] {
-        for name in self.names {
+        for name in self.names.iter().take(self.next_name) {
             if let Some(other) = name.register_id() {
                 if other == id {
                     return name.pick_bytes(&self.other_bytes);
@@ -267,6 +271,22 @@ impl Compilation {
 
         Ok(id)
     }
+
+    pub fn write_event(&mut self, name: &[u8], offset: u16) -> Result<(), &'static str> {
+        if offset & EVENT_BIT_16 != 0 {
+            return Err("event offset too high");
+        }
+        let id = offset | EVENT_BIT_16;
+
+        for found in self.names.iter().take(self.next_name) {
+            if found.pick_bytes(&self.other_bytes).eq_ignore_ascii_case(name) {
+                return Err("name already taken");
+            }
+        }
+
+        self.write_name(name, id);
+        Ok(())
+    }
 }
 
 pub fn token_to_register_id(registers: &mut Compilation, token: Token, constant_allowed: bool)
@@ -313,7 +333,6 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser], instruction
 
     let mut script = Script::new(source);
     let instructions = &mut WriteInstructions {next_index: 0, inner: instructions};
-
     let mut compilation = Compilation::default();
 
     let mut prev_len = 0;
@@ -389,6 +408,7 @@ mod tests {
         assert_eq!(wr.next_register, 1);
         assert_eq!(wr.register_name(0), b"asdf");
         assert_eq!(&wr.registers[0..2], &[0, 0]);
+        assert_eq!(wr.register_by_name(b"asdf"), Some(0));
     }
 
     #[test]
@@ -400,6 +420,7 @@ mod tests {
         assert_eq!(wr.next_register, 1);
         assert_eq!(wr.register_name(0), b"asdf");
         assert_eq!(&wr.registers[0..2], &[0, 0]);
+        assert_eq!(wr.register_by_name(b"asdf"), Some(0));
     }
 
     #[test]
@@ -410,12 +431,15 @@ mod tests {
         assert_eq!(wr.names[0], NameSpec {start: 0, end: 1, register_or_event: 0});
         assert_eq!(wr.names[0].register_id(), Some(0));
         assert_eq!(wr.register_name(0), b"a");
+        assert_eq!(wr.register_by_name(b"a"), Some(0));
 
         wr.write_name(b"b", 1);
         assert_eq!(wr.names[0], NameSpec {start: 0, end: 1, register_or_event: 0});
         assert_eq!(wr.names[1], NameSpec {start: 1, end: 2, register_or_event: 1});
         assert_eq!(wr.register_name(0), b"a");
         assert_eq!(wr.register_name(1), b"b");
+        assert_eq!(wr.register_by_name(b"a"), Some(0));
+        assert_eq!(wr.register_by_name(b"b"), Some(1));
 
         assert_eq!(&wr.other_bytes[0..2], b"ab");
     }
@@ -428,6 +452,8 @@ mod tests {
         wr.write_name(b"rqs", 1);
         assert_eq!(wr.register_name(0), b"abc");
         assert_eq!(wr.register_name(1), b"rqs");
+        assert_eq!(wr.register_by_name(b"abc"), Some(0));
+        assert_eq!(wr.register_by_name(b"rqs"), Some(1));
 
         assert_eq!(&wr.other_bytes[0..6], b"abcrqs");
     }
@@ -440,8 +466,33 @@ mod tests {
         wr.write_name(b"rqs", 2);
         assert_eq!(wr.register_name(0), b"abc");
         assert_eq!(wr.register_name(2), b"rqs");
+        assert_eq!(wr.register_by_name(b"abc"), Some(0));
+        assert_eq!(wr.register_by_name(b"rqs"), Some(2));
 
         assert_eq!(&wr.other_bytes[0..6], b"abcrqs");
+    }
+
+    #[test]
+    fn event_naming() {
+        let spec = NameSpec {start: 0, end: 0, register_or_event: EVENT_BIT_16};
+        assert_eq!(spec.event_location(), Some(0));
+
+        let spec = NameSpec {start: 0, end: 0, register_or_event: EVENT_BIT_16 | 5};
+        assert_eq!(spec.event_location(), Some(5));
+    }
+
+    #[test]
+    fn writing_events() {
+        let mut wr = Compilation::default();
+        wr.write_event(b"asdf", 0).unwrap();
+        assert_eq!(wr.event_by_name(b"asdf"), Some(0));
+    }
+
+    #[test]
+    fn no_event_register_name_collision() {
+        let mut wr = Compilation::default();
+        wr.write_variable("asdf", DataType::Unknown).unwrap();
+        wr.write_event(b"asdf", 0).unwrap_err();
     }
 
 }

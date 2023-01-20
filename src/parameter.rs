@@ -1,5 +1,5 @@
 use crate::compile::{Compilation, WriteInstructions, token_to_register_id};
-use crate::execute::{Instruction, OP_MOVE, OP_INT_ADD, OP_INT_SUB, OP_INT_EQ, OP_INT_NE};
+use crate::execute::{Instruction, OP_MOVE, OP_INT_ADD, OP_INT_SUB, OP_INT_EQ, OP_INT_NE, OP_DONE};
 use crate::token::{Token, tokenize};
 use crate::typing::DataType;
 
@@ -152,6 +152,32 @@ pub fn parse_end_if(parameters: &str, _compilation: &mut Compilation, instructio
     Err("end if without if")
 }
 
+pub fn parse_event(parameters: &str, compilation: &mut Compilation, instructions: &mut WriteInstructions)
+-> Result<(), &'static str> {
+
+    let mut tok = tokenize(parameters);
+    let name = match tok.next() {
+        Token::Identifier(name) => name,
+        _ => return Err("???"),
+    };
+    match tok.next() {
+        Token::Done => {},
+        _ => return Err("???"),
+    }
+
+    let offset = instructions.next_index as u16; // TODO: need to check for failures in all casts
+    compilation.write_event(name.as_bytes(), offset)
+}
+
+pub fn parse_end_event(parameters: &str, _compilation: &mut Compilation, instructions: &mut WriteInstructions)
+-> Result<(), &'static str> {
+    if parameters.len() > 0 {
+        return Err("end event doesn't take any parameters");
+    }
+
+    instructions.write(Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,11 +191,15 @@ mod tests {
         "if",
         "end if",
         "set",
+        "event",
+        "end event",
     ];
     const PARSERS: &[Parser] = &[
         parse_if,
         parse_end_if,
         parse_set,
+        parse_event,
+        parse_end_event,
     ];
 
     #[test]
@@ -344,5 +374,18 @@ mod tests {
             Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
             Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
         ]);
+    }
+
+    #[test]
+    fn empty_event() {
+        let instructions = &mut [Instruction::default(); 2];
+        let source = "
+            event do_something
+            end event
+        ";
+        let comp = compile(source, COMMANDS, PARSERS, instructions).unwrap();
+
+        assert_eq!(instructions[0], Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0});
+        assert_eq!(comp.event_by_name(b"do_something"), Some(0));
     }
 }
