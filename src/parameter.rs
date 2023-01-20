@@ -1,4 +1,4 @@
-use crate::compile::{Compilation, WriteInstructions, token_to_register_id};
+use crate::compile::{Compilation, WriteInstructions, token_to_register_id, MAX_EVENT};
 use crate::execute::{Instruction, OP_MOVE, OP_INT_ADD, OP_INT_SUB, OP_INT_EQ, OP_INT_NE, OP_DONE};
 use crate::token::{Token, tokenize};
 use crate::typing::DataType;
@@ -131,16 +131,20 @@ fn is_branch_opcode(opcode: u8) -> bool {
     }
 }
 
-pub fn parse_end_if(parameters: &str, _compilation: &mut Compilation, instructions: &mut WriteInstructions)
+pub fn parse_end_if(parameters: &str, compilation: &mut Compilation, instructions: &mut WriteInstructions)
 -> Result<(), &'static str> {
     if parameters.len() > 0 {
         return Err("end if doesn't take any parameters");
     }
 
     let instr = instructions.current_instructions();
-
     for dist in 0..instr.len() {
-        let current = &mut instr[instr.len() - dist - 1];
+        let current_index = instr.len() - dist - 1;
+        let current = &mut instr[current_index];
+        if current_index <= MAX_EVENT as usize && compilation.is_event(current_index as u16) {
+            return Err("end if before end event");
+        }
+
         if is_branch_opcode(current.opcode) && current.reg_a == 0 {
             if dist > u8::MAX as usize {
                 return Err("too many instructions in branch");
@@ -149,6 +153,7 @@ pub fn parse_end_if(parameters: &str, _compilation: &mut Compilation, instructio
             return Ok(());
         }
     }
+
     Err("end if without if")
 }
 
@@ -534,5 +539,45 @@ mod tests {
         execute(comp.event_by_name(b"do_something").unwrap(), &mut comp.registers, instructions).unwrap();
 
         assert_eq!(comp.registers[comp.register_by_name(b"thing").unwrap() as usize], 10000);
+    }
+
+    #[test]
+    fn no_event_inside_if() {
+        let instructions = &mut [Instruction::default(); 10];
+        let source = "
+            if dont_do_this = 999
+                event this_bad
+                    set omg: 10000
+                end event
+            end if
+        ";
+        compile(source, COMMANDS, PARSERS, instructions).unwrap_err();
+    }
+
+    #[test]
+    fn end_event_before_end_if() {
+        let instructions = &mut [Instruction::default(); 10];
+        let source = "
+            event this_also_bad
+                if no_no_no = 999
+                    set omg: 10000
+            end event
+                end if
+        ";
+        compile(source, COMMANDS, PARSERS, instructions).unwrap_err();
+        // TODO: need to verify errors - this test is actually producing the wrong error
+    }
+
+    #[test]
+    fn end_if_before_end_event() {
+        let instructions = &mut [Instruction::default(); 10];
+        let source = "
+                if no_no_no = 999
+            event this_be_error
+                    set omg: 10000
+                end if
+            end event
+        ";
+        compile(source, COMMANDS, PARSERS, instructions).unwrap_err();
     }
 }

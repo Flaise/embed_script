@@ -25,6 +25,14 @@ impl<'a> WriteInstructions<'a> {
         debug_assert!(self.next_index <= self.inner.len());
         &mut self.inner[..self.next_index]
     }
+
+    pub fn backtrack(&self) -> impl Iterator<Item=Instruction> + '_ {
+        self.inner.iter().cloned().take(self.next_index).rev()
+    }
+
+    pub fn backtrack_mut(&mut self) -> impl Iterator<Item=&mut Instruction> {
+        self.inner.iter_mut().take(self.next_index).rev()
+    }
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -36,6 +44,7 @@ struct RegisterInfo {
 const NUM_REGISTERS: usize = 256;
 
 const EVENT_BIT_16: u16 = 0b1000_0000_0000_0000;
+pub const MAX_EVENT: u16 = 0b0111_1111_1111_1111;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 struct NameSpec {
@@ -107,9 +116,9 @@ fn into_inst_index(index: usize) -> Result<u8, &'static str> {
 impl Compilation {
 
     pub fn register_by_name(&self, check: &[u8]) -> Option<u8> {
-        for name in self.names.iter().take(self.next_name) {
-            if name.pick_bytes(&self.other_bytes).eq_ignore_ascii_case(check) {
-                return name.register_id();
+        for spec in self.valid_names() {
+            if spec.pick_bytes(&self.other_bytes).eq_ignore_ascii_case(check) {
+                return spec.register_id();
             }
         }
         None
@@ -123,9 +132,9 @@ impl Compilation {
     }
 
     pub fn event_by_name(&self, check: &[u8]) -> Option<u16> {
-        for name in self.names.iter().take(self.next_name) {
-            if name.pick_bytes(&self.other_bytes).eq_ignore_ascii_case(check) {
-                return name.event_location();
+        for spec in self.valid_names() {
+            if spec.pick_bytes(&self.other_bytes).eq_ignore_ascii_case(check) {
+                return spec.event_location();
             }
         }
         None
@@ -162,8 +171,28 @@ impl Compilation {
         self.next_name += 1;
     }
 
+    pub fn is_event(&self, offset: u16) -> bool {
+        if offset & EVENT_BIT_16 != 0 {
+            return false;
+        }
+        for spec in self.valid_names() {
+            if spec.event_location() == Some(offset) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn valid_names(&self) -> impl Iterator<Item=&NameSpec> {
+        self.names.iter().take(self.next_name)
+    }
+
+    fn valid_name_bytes(&self) -> impl Iterator<Item=&[u8]> {
+        self.valid_names().map(move |spec| spec.pick_bytes(&self.other_bytes))
+    }
+
     fn register_name(&self, id: u8) -> &[u8] {
-        for name in self.names.iter().take(self.next_name) {
+        for name in self.valid_names() {
             if let Some(other) = name.register_id() {
                 if other == id {
                     return name.pick_bytes(&self.other_bytes);
