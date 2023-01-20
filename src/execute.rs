@@ -33,9 +33,9 @@ fn validate_branch(inst_len: usize, counter: usize, reg_a: u8) -> Result<(), &'s
     Ok(())
 }
 
-pub fn execute(starting_instruction: usize, registers: &mut [Register], instructions: &[Instruction])
+pub fn execute(starting_instruction: u16, registers: &mut [Register], instructions: &[Instruction])
 -> Result<(), &'static str> {
-    let mut counter = starting_instruction;
+    let mut counter = starting_instruction as usize;
     while counter < instructions.len() {
         let inst = instructions[counter];
 
@@ -102,9 +102,8 @@ pub fn execute(starting_instruction: usize, registers: &mut [Register], instruct
 
 #[cfg(test)]
 mod tests {
-    use crate::typing::int_to_register;
-
     use super::*;
+    use crate::typing::int_to_register;
 
     #[test]
     fn moving_values() {
@@ -196,6 +195,21 @@ mod tests {
         ]).unwrap();
 
         assert_eq!(registers, &[0, 0, 0]);
+    }
+
+    #[test]
+    fn halt_execution() {
+        let instructions = &[
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
+        ];
+        let registers = &mut [0, 100, 0];
+
+        execute(0, registers, instructions).unwrap();
+        assert_eq!(registers, &[0, 100, 0]);
+
+        execute(1, registers, instructions).unwrap();
+        assert_eq!(registers, &[100, 100, 0]);
     }
 
 }

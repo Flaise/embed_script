@@ -165,8 +165,17 @@ pub fn parse_event(parameters: &str, compilation: &mut Compilation, instructions
         _ => return Err("???"),
     }
 
+    write_done(instructions)?;
+
     let offset = instructions.next_index as u16; // TODO: need to check for failures in all casts
     compilation.write_event(name.as_bytes(), offset)
+}
+
+fn write_done(instructions: &mut WriteInstructions) -> Result<(), &'static str> {
+    if instructions.next_index != 0 && instructions.inner[instructions.next_index - 1].opcode == OP_DONE {
+        return Ok(());
+    }
+    instructions.write(Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0})
 }
 
 pub fn parse_end_event(parameters: &str, _compilation: &mut Compilation, instructions: &mut WriteInstructions)
@@ -176,6 +185,7 @@ pub fn parse_end_event(parameters: &str, _compilation: &mut Compilation, instruc
     }
 
     instructions.write(Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0})
+    // write_done(instructions) // this would only serve as an optimization for an empty event
 }
 
 #[cfg(test)]
@@ -386,6 +396,143 @@ mod tests {
         let comp = compile(source, COMMANDS, PARSERS, instructions).unwrap();
 
         assert_eq!(instructions[0], Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0});
-        assert_eq!(comp.event_by_name(b"do_something"), Some(0));
+
+        // optimization could make this return Some(0)
+        assert_eq!(comp.event_by_name(b"do_something"), Some(1));
+    }
+
+    #[test]
+    fn event_name_collision() {
+        let instructions = &mut [Instruction::default(); 5];
+        let source = "
+            set do_something: 0
+            event do_something
+            end event
+        ";
+        compile(source, COMMANDS, PARSERS, instructions).unwrap_err();
+    }
+
+    #[test]
+    fn event_with_command() {
+        let instructions = &mut [Instruction::default(); 5];
+        let source = "
+            event do_something
+                set something_else: 10000
+            end event
+        ";
+        let comp = compile(source, COMMANDS, PARSERS, instructions).unwrap();
+
+        assert_eq!(&instructions[0..3], &[
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+        ]);
+        assert_eq!(comp.event_by_name(b"do_something"), Some(1));
+        assert_eq!(comp.register_by_name(b"something_else"), Some(0));
+    }
+
+    #[test]
+    fn delimit_top_level() {
+        let instructions = &mut [Instruction::default(); 5];
+        let source = "
+            set something: 2222
+            event do_something
+                set something_else: 10000
+            end event
+        ";
+        let comp = compile(source, COMMANDS, PARSERS, instructions).unwrap();
+
+        assert_eq!(&instructions[0..4], &[
+            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 3, reg_c: 0},
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+        ]);
+        assert_eq!(comp.event_by_name(b"do_something"), Some(2));
+        assert_eq!(comp.register_by_name(b"something"), Some(0));
+        assert_eq!(comp.register_by_name(b"something_else"), Some(2));
+    }
+
+    #[test]
+    fn stay_at_top_level() {
+        let instructions = &mut [Instruction::default(); 10];
+        let source = "
+            set thing: 22222
+            event do_something
+                set thing: 10000
+            end event
+        ";
+
+        let mut comp = compile(source, COMMANDS, PARSERS, instructions).unwrap();
+        execute(0, &mut comp.registers, instructions).unwrap();
+
+        assert_eq!(comp.registers[comp.register_by_name(b"thing").unwrap() as usize], 22222);
+    }
+
+    #[test]
+    fn goto_event() {
+        let instructions = &mut [Instruction::default(); 10];
+        let source = "
+            set thing: 22222
+            event do_something
+                set thing: 10000
+            end event
+        ";
+
+        let mut comp = compile(source, COMMANDS, PARSERS, instructions).unwrap();
+        execute(comp.event_by_name(b"do_something").unwrap(), &mut comp.registers, instructions).unwrap();
+
+        assert_eq!(comp.registers[comp.register_by_name(b"thing").unwrap() as usize], 10000);
+    }
+
+    #[test]
+    fn exit_event() {
+        let instructions = &mut [Instruction::default(); 10];
+        let source = "
+            event do_something
+                set thing: 10000
+            end event
+            set thing: 22222
+        ";
+
+        let mut comp = compile(source, COMMANDS, PARSERS, instructions).unwrap();
+        execute(comp.event_by_name(b"do_something").unwrap(), &mut comp.registers, instructions).unwrap();
+
+        assert_eq!(comp.registers[comp.register_by_name(b"thing").unwrap() as usize], 10000);
+    }
+
+    #[test]
+    fn exit_empty_event() {
+        let instructions = &mut [Instruction::default(); 10];
+        let source = "
+            event do_something
+            end event
+            set thing: 22222
+        ";
+
+        let mut comp = compile(source, COMMANDS, PARSERS, instructions).unwrap();
+        execute(comp.event_by_name(b"do_something").unwrap(), &mut comp.registers, instructions).unwrap();
+
+        assert_eq!(comp.registers[comp.register_by_name(b"thing").unwrap() as usize], 0);
+    }
+
+    #[test]
+    fn exit_event_after_empty_event() {
+        let instructions = &mut [Instruction::default(); 10];
+        let source = "
+            event nothing
+            end event
+
+            event do_something
+                set thing: 10000
+            end event
+
+            set thing: 22222
+        ";
+
+        let mut comp = compile(source, COMMANDS, PARSERS, instructions).unwrap();
+        execute(comp.event_by_name(b"do_something").unwrap(), &mut comp.registers, instructions).unwrap();
+
+        assert_eq!(comp.registers[comp.register_by_name(b"thing").unwrap() as usize], 10000);
     }
 }

@@ -7,7 +7,7 @@ use crate::token::Token;
 use crate::typing::{DataType, Register, int_to_register, float_to_register};
 
 pub struct WriteInstructions<'a> {
-    inner: &'a mut [Instruction],
+    pub inner: &'a mut [Instruction],
     pub next_index: usize,
 }
 
@@ -111,6 +111,13 @@ impl Compilation {
             if name.pick_bytes(&self.other_bytes).eq_ignore_ascii_case(check) {
                 return name.register_id();
             }
+        }
+        None
+    }
+
+    pub fn register_value_by_name(&self, check: &[u8]) -> Option<Register> {
+        if let Some(id) = self.register_by_name(check) {
+            return Some(self.registers[id as usize]);
         }
         None
     }
