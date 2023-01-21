@@ -42,7 +42,6 @@ struct RegisterInfo {
 }
 
 const NUM_REGISTERS: usize = 256;
-
 const EVENT_BIT_16: u16 = 0b1000_0000_0000_0000;
 pub const MAX_EVENT: u16 = 0b0111_1111_1111_1111;
 
