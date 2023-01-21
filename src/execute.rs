@@ -25,6 +25,8 @@ pub const OP_INT_ADD: u8 = 7;
 /// A <- B - C
 pub const OP_INT_SUB: u8 = 8;
 
+// pub const OP_OUTBOX_WRITE: u8 = 9; // TODO
+
 fn validate_branch(inst_len: usize, counter: usize, reg_a: u8) -> Result<(), &'static str> {
     debug_assert!(inst_len > counter);
     if inst_len - counter - 1 < reg_a as usize {
@@ -33,25 +35,31 @@ fn validate_branch(inst_len: usize, counter: usize, reg_a: u8) -> Result<(), &'s
     Ok(())
 }
 
-pub fn execute(starting_instruction: u16, registers: &mut [Register], instructions: &[Instruction])
--> Result<(), &'static str> {
-    let mut counter = starting_instruction as usize;
-    while counter < instructions.len() {
-        let inst = instructions[counter];
+pub struct Actor<'a> {
+    pub registers: &'a mut [Register],
+    pub instructions: &'a [Instruction],
+    pub constants: &'a [u8],
+    pub outbox: &'a mut [u8],
+}
 
-        let bv = registers[inst.reg_b as usize];
-        let cv = registers[inst.reg_c as usize];
+pub fn execute(actor: &mut Actor, location: u16) -> Result<(), &'static str> {
+    let mut counter = location as usize;
+    while counter < actor.instructions.len() {
+        let inst = actor.instructions[counter];
+
+        let bv = actor.registers[inst.reg_b as usize];
+        let cv = actor.registers[inst.reg_c as usize];
 
         match inst.opcode {
             OP_MOVE => {
                 debug_assert_eq!(inst.reg_c, 0);
-                registers[inst.reg_a as usize] = bv;
+                actor.registers[inst.reg_a as usize] = bv;
             }
             OP_INT_ADD => {
                 let bi = register_to_int(bv);
                 let ci = register_to_int(cv);
                 if let Some(a) = bi.checked_add(ci) {
-                    registers[inst.reg_a as usize] = int_to_register(a);
+                    actor.registers[inst.reg_a as usize] = int_to_register(a);
                 } else {
                     todo!();
                 }
@@ -60,31 +68,31 @@ pub fn execute(starting_instruction: u16, registers: &mut [Register], instructio
                 let bi = register_to_int(bv);
                 let ci = register_to_int(cv);
                 if let Some(a) = bi.checked_sub(ci) {
-                    registers[inst.reg_a as usize] = int_to_register(a);
+                    actor.registers[inst.reg_a as usize] = int_to_register(a);
                 } else {
                     todo!();
                 }
             }
             OP_INT_EQ => {
-                validate_branch(instructions.len(), counter, inst.reg_a)?;
+                validate_branch(actor.instructions.len(), counter, inst.reg_a)?;
                 if bv == cv {
                     counter += inst.reg_a as usize;
                 }
             }
             OP_INT_LE => {
-                validate_branch(instructions.len(), counter, inst.reg_a)?;
+                validate_branch(actor.instructions.len(), counter, inst.reg_a)?;
                 if bv <= cv {
                     counter += inst.reg_a as usize;
                 }
             }
             OP_INT_LT => {
-                validate_branch(instructions.len(), counter, inst.reg_a)?;
+                validate_branch(actor.instructions.len(), counter, inst.reg_a)?;
                 if bv < cv {
                     counter += inst.reg_a as usize;
                 }
             }
             OP_INT_NE => {
-                validate_branch(instructions.len(), counter, inst.reg_a)?;
+                validate_branch(actor.instructions.len(), counter, inst.reg_a)?;
                 if bv != cv {
                     counter += inst.reg_a as usize;
                 }
@@ -107,109 +115,135 @@ mod tests {
 
     #[test]
     fn moving_values() {
-        let registers = &mut [2, 3, 0];
-        execute(0, registers, &[
-            Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 0, reg_c: 0},
-        ]).unwrap();
-        assert_eq!(registers, &[2, 3, 2]);
+        let mut actor = Actor {
+            registers: &mut [2, 3, 0],
+            instructions: &[Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 0, reg_c: 0}],
+            constants: &[],
+            outbox: &mut [],
+        };
+        execute(&mut actor, 0).unwrap();
+        assert_eq!(actor.registers, &[2, 3, 2]);
 
-        let registers = &mut [2, 3, 0];
-        execute(0, registers, &[
-            Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 1, reg_c: 0},
-        ]).unwrap();
-        assert_eq!(registers, &[2, 3, 3]);
+        let mut actor = Actor {
+            registers: &mut [2, 3, 0],
+            instructions: &[Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 1, reg_c: 0}],
+            constants: &[],
+            outbox: &mut [],
+        };
+        execute(&mut actor, 0).unwrap();
+        assert_eq!(actor.registers, &[2, 3, 3]);
     }
 
     #[test]
     fn addition() {
-        let registers = &mut [2, 3, 0];
-
-        execute(0, registers, &[
-            Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1},
-        ]).unwrap();
-
-        assert_eq!(registers, &[2, 3, 5]);
+        let mut actor = Actor {
+            registers: &mut [2, 3, 0],
+            instructions: &[Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1}],
+            constants: &[],
+            outbox: &mut [],
+        };
+        execute(&mut actor, 0).unwrap();
+        assert_eq!(actor.registers, &[2, 3, 5]);
     }
 
     #[test]
     fn subtraction() {
-        let registers = &mut [2, 3, 0];
-
-        execute(0, registers, &[
-            Instruction {opcode: OP_INT_SUB, reg_a: 2, reg_b: 0, reg_c: 1},
-        ]).unwrap();
-
-        assert_eq!(registers, &[2, 3, int_to_register(-1)]);
+        let mut actor = Actor {
+            registers: &mut [2, 3, 0],
+            instructions: &[Instruction {opcode: OP_INT_SUB, reg_a: 2, reg_b: 0, reg_c: 1}],
+            constants: &[],
+            outbox: &mut [],
+        };
+        execute(&mut actor, 0).unwrap();
+        assert_eq!(actor.registers, &[2, 3, int_to_register(-1)]);
     }
 
     #[test]
     fn jump_eq_false() {
-        let registers = &mut [2, 3, 0];
-
-        execute(0, registers, &[
-            Instruction {opcode: OP_INT_EQ, reg_a: 1, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1},
-        ]).unwrap();
-
-        assert_eq!(registers, &[2, 3, 5]);
+        let mut actor = Actor {
+            registers: &mut [2, 3, 0],
+            instructions: &[
+                Instruction {opcode: OP_INT_EQ, reg_a: 1, reg_b: 0, reg_c: 1},
+                Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1},
+            ],
+            constants: &[],
+            outbox: &mut [],
+        };
+        execute(&mut actor, 0).unwrap();
+        assert_eq!(actor.registers, &[2, 3, 5]);
     }
 
     #[test]
     fn jump_eq_true() {
-        let registers = &mut [3, 3, 0];
-
-        execute(0, registers, &[
-            Instruction {opcode: OP_INT_EQ, reg_a: 1, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1},
-        ]).unwrap();
-
-        assert_eq!(registers, &[3, 3, 0]);
+        let mut actor = Actor {
+            registers: &mut [3, 3, 0],
+            instructions: &[
+                Instruction {opcode: OP_INT_EQ, reg_a: 1, reg_b: 0, reg_c: 1},
+                Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1},
+            ],
+            constants: &[],
+            outbox: &mut [],
+        };
+        execute(&mut actor, 0).unwrap();
+        assert_eq!(actor.registers, &[3, 3, 0]);
     }
 
     #[test]
     fn jump_eq_overrun() {
-        let registers = &mut [3, 3, 0];
-
-        execute(0, registers, &[
-            Instruction {opcode: OP_INT_EQ, reg_a: 2, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1},
-        ]).unwrap_err();
+        let mut actor = Actor {
+            registers: &mut [3, 3, 0],
+            instructions: &[
+                Instruction {opcode: OP_INT_EQ, reg_a: 2, reg_b: 0, reg_c: 1},
+                Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1},
+            ],
+            constants: &[],
+            outbox: &mut [],
+        };
+        execute(&mut actor, 0).unwrap_err();
     }
 
     #[test]
     fn jump_eq_empty() {
-        let registers = &mut [0, 0, 0];
+        let mut actor = Actor {
+            registers: &mut [0, 0, 0],
+            instructions: &[
+                Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
+                Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            ],
+            constants: &[],
+            outbox: &mut [],
+        };
+        execute(&mut actor, 0).unwrap();
+        assert_eq!(actor.registers, &[0, 0, 0]);
 
-        // zero length jump could be optimized out
-        execute(0, registers, &[
-            Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-        ]).unwrap();
-
-        assert_eq!(registers, &[0, 0, 0]);
-
-        let registers = &mut [0, 0, 0];
-
-        execute(0, registers, &[
-            Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
-        ]).unwrap();
-
-        assert_eq!(registers, &[0, 0, 0]);
+        let mut actor = Actor {
+            registers: &mut [0, 0, 0],
+            instructions: &[
+                Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
+            ],
+            constants: &[],
+            outbox: &mut [],
+        };
+        execute(&mut actor, 0).unwrap();
+        assert_eq!(actor.registers, &[0, 0, 0]);
     }
 
     #[test]
     fn halt_execution() {
-        let instructions = &[
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-        ];
-        let registers = &mut [0, 100, 0];
+        let mut actor = Actor {
+            registers: &mut [0, 100, 0],
+            instructions: &[
+                Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+                Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
+            ],
+            constants: &[],
+            outbox: &mut [],
+        };
+        execute(&mut actor, 0).unwrap();
+        assert_eq!(actor.registers, &[0, 100, 0]);
 
-        execute(0, registers, instructions).unwrap();
-        assert_eq!(registers, &[0, 100, 0]);
-
-        execute(1, registers, instructions).unwrap();
-        assert_eq!(registers, &[100, 100, 0]);
+        execute(&mut actor, 1).unwrap();
+        assert_eq!(actor.registers, &[100, 100, 0]);
     }
 
 }

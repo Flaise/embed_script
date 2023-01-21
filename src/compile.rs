@@ -1,38 +1,23 @@
 use core::convert::TryInto;
 use core::ops::Range;
 use crate::scan::ScanOp;
-use crate::execute::{Instruction, OP_DONE};
+use crate::execute::{Instruction, OP_DONE, Actor, execute};
 use crate::script::{Script, script_next, Commands};
 use crate::token::Token;
 use crate::typing::{DataType, Register, int_to_register, float_to_register};
 
-pub struct WriteInstructions<'a> {
-    pub inner: &'a mut [Instruction],
-    pub next_index: usize,
+pub fn execute_event(compilation: &mut Compilation, event_name: &[u8]) -> Result<(), &'static str> {
+    if let Some(location) = compilation.event_by_name(event_name) {
+        let mut actor = compilation.as_actor();
+        execute(&mut actor, location)
+    } else {
+        Err("event not found")
+    }
 }
 
-impl<'a> WriteInstructions<'a> {
-    pub fn write(&mut self, instruction: Instruction) -> Result<(), &'static str> {
-        if self.next_index >= self.inner.len() {
-            return Err("too many bytecode instructions");
-        }
-        self.inner[self.next_index] = instruction;
-        self.next_index += 1;
-        Ok(())
-    }
-
-    pub fn current_instructions(&mut self) -> &mut [Instruction] {
-        debug_assert!(self.next_index <= self.inner.len());
-        &mut self.inner[..self.next_index]
-    }
-
-    pub fn backtrack(&self) -> impl Iterator<Item=Instruction> + '_ {
-        self.inner.iter().cloned().take(self.next_index).rev()
-    }
-
-    pub fn backtrack_mut(&mut self) -> impl Iterator<Item=&mut Instruction> {
-        self.inner.iter_mut().take(self.next_index).rev()
-    }
+pub fn execute_compilation(compilation: &mut Compilation) -> Result<(), &'static str> {
+    let mut actor = compilation.as_actor();
+    execute(&mut actor, 0)
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -91,7 +76,8 @@ pub struct Compilation {
     pub next_name: usize,
     pub next_byte: usize,
 
-    // TODO: instructions
+    instructions: [Instruction; 1024],
+    pub next_instruction: usize,
 }
 
 impl Default for Compilation {
@@ -104,6 +90,8 @@ impl Default for Compilation {
             next_register: 0,
             next_name: 0,
             next_byte: 0,
+            instructions: [Instruction::default(); 1024],
+            next_instruction: 0,
         }
     }
 }
@@ -113,6 +101,51 @@ fn into_inst_index(index: usize) -> Result<u8, &'static str> {
 }
 
 impl Compilation {
+
+    pub fn pick_outbox(&mut self) -> &mut [u8] {
+        &mut self.other_bytes[self.next_byte..]
+    }
+
+    pub fn pick_constants(&self) -> &[u8] {
+        &self.other_bytes[..self.next_byte]
+    }
+
+    pub fn pick_registers(&mut self) -> &mut [Register] {
+        &mut self.registers[..self.next_register]
+    }
+
+    #[cfg(test)]
+    pub fn active_instructions(&self) -> &[Instruction] {
+        if let Some(inst) = self.last_instruction() {
+            if inst.opcode == OP_DONE {
+                return &self.instructions[..self.next_instruction - 1];
+            }
+        }
+        &self.instructions[..self.next_instruction]
+    }
+
+    pub fn pick_instructions(&self) -> &[Instruction] {
+        &self.instructions[..self.next_instruction]
+    }
+
+    pub fn pick_instructions_mut(&mut self) -> &mut [Instruction] {
+        &mut self.instructions[..self.next_instruction]
+    }
+
+    pub fn last_instruction(&self) -> Option<&Instruction> {
+        if self.next_instruction == 0 {
+            None
+        } else {
+            Some(&self.instructions[self.next_instruction - 1])
+        }
+    }
+
+    pub fn as_actor(&mut self) -> Actor {
+        let (constants, outbox) = self.other_bytes.split_at_mut(self.next_byte);
+        let registers = &mut self.registers[..self.next_register];
+        let instructions = &self.instructions[..self.next_instruction];
+        Actor {registers, instructions, constants, outbox}
+    }
 
     pub fn register_by_name(&self, check: &[u8]) -> Option<u8> {
         for spec in self.valid_names() {
@@ -171,7 +204,7 @@ impl Compilation {
     }
 
     pub fn is_event(&self, offset: u16) -> bool {
-        if offset & EVENT_BIT_16 != 0 {
+        if offset > MAX_EVENT {
             return false;
         }
         for spec in self.valid_names() {
@@ -322,9 +355,18 @@ impl Compilation {
         self.write_name(name, id);
         Ok(())
     }
+
+    pub fn write_instruction(&mut self, instruction: Instruction) -> Result<(), &'static str> {
+        if self.next_instruction >= self.instructions.len() {
+            return Err("too many bytecode instructions");
+        }
+        self.instructions[self.next_instruction] = instruction;
+        self.next_instruction += 1;
+        Ok(())
+    }
 }
 
-pub fn token_to_register_id(registers: &mut Compilation, token: Token, constant_allowed: bool)
+pub fn token_to_register_id(compilation: &mut Compilation, token: Token, constant_allowed: bool)
 -> Result<u8, &'static str> {
     match token {
         Token::Symbol(_) => {
@@ -335,13 +377,13 @@ pub fn token_to_register_id(registers: &mut Compilation, token: Token, constant_
             }
         }
         Token::Integer(val) => {
-            registers.write_constant_int(val)
+            compilation.write_constant_int(val)
         }
         Token::Float(val) => {
-            registers.write_constant_float(val)
+            compilation.write_constant_float(val)
         }
         Token::Identifier(var) => {
-            registers.write_variable(var, DataType::Unknown)
+            compilation.write_variable(var, DataType::Unknown)
         }
         Token::CommandEnd => {
             debug_assert!(false, "there should be no newlines in the parameters");
@@ -360,20 +402,19 @@ pub fn token_to_register_id(registers: &mut Compilation, token: Token, constant_
     }
 }
 
-pub type Parser = fn (parameters: &str, registers: &mut Compilation, instructions: &mut WriteInstructions) -> Result<(), &'static str>;
+pub type Parser = fn (parameters: &str, registers: &mut Compilation) -> Result<(), &'static str>;
 
-pub fn compile(source: &str, commands: Commands, parsers: &[Parser], instructions: &mut [Instruction])
+pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
 -> Result<Compilation, &'static str> {
     debug_assert!(commands.len() == parsers.len());
 
     let mut script = Script::new(source);
-    let instructions = &mut WriteInstructions {next_index: 0, inner: instructions};
     let mut compilation = Compilation::default();
 
     let mut prev_len = 0;
 
     loop {
-        if instructions.next_index != 0 && script.source.len() >= prev_len {
+        if compilation.next_instruction != 0 && script.source.len() >= prev_len {
             return Err("no bytes processed");
         }
         prev_len = script.source.len();
@@ -383,14 +424,14 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser], instruction
         match parseop {
             ScanOp::Op(op) => {
                 if let Some(parser) = parsers.get(op.command_index) {
-                    parser(op.parameters, &mut compilation, instructions)?;
+                    parser(op.parameters, &mut compilation)?;
                 } else {
                     return Err("internal error: invalid command index");
                 }
             }
             ScanOp::Done => {
-                if instructions.next_index < instructions.inner.len() {
-                    instructions.write(Instruction {
+                if compilation.next_instruction < compilation.instructions.len() {
+                    compilation.write_instruction(Instruction {
                         opcode: OP_DONE,
                         reg_a: 0,
                         reg_b: 0,
@@ -416,7 +457,7 @@ mod tests {
         "set",
     ];
 
-    fn no(_: &str, _: &mut Compilation, _: &mut WriteInstructions) -> Result<(), &'static str> {
+    fn no(_: &str, _: &mut Compilation) -> Result<(), &'static str> {
         panic!("should not be called");
     }
 
@@ -428,10 +469,9 @@ mod tests {
 
     #[test]
     fn empty_termination() {
-        let instructions = &mut [Instruction::default(); 2];
-        compile("\t \n\t ", COMMANDS, PARSERS, instructions).unwrap();
+        let compilation = compile("\t \n\t ", COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(instructions[0], Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0});
+        assert_eq!(compilation.instructions[0], Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0});
     }
 
     #[test]
