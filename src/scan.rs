@@ -1,3 +1,4 @@
+use core::cmp::min;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ScriptError {
@@ -193,8 +194,7 @@ fn match_command<'a, 'b>(line: &'a str, check: &'b str) -> Option<&'a str> {
     Some(&line[..end])
 }
 
-pub fn scan_line<'a, 'b>(mut program: &'a str, commands: &'b [&str])
--> ScanLine<'a> {
+pub fn scan_line<'a, 'b>(mut program: &'a str, commands: &'b [&str]) -> ScanLine<'a> {
     loop {
         match next_line(program) {
             Progress::Done => {
@@ -206,27 +206,16 @@ pub fn scan_line<'a, 'b>(mut program: &'a str, commands: &'b [&str])
                     continue;
                 }
 
+                if line.as_bytes().contains(&b'\t') {
+                    return ScanLine::Err(ScriptError::TabInCommand);
+                }
+
                 for (command_index, &command) in commands.iter().enumerate() {
                     if let Some(matched) = match_command(line, command) {
-                        let mut parameters = &line[matched.len()..];
+                        // add 1 to skip the space that separates command from parameters
+                        let spliti = min(matched.len() + 1, line.len());
 
-                        // all bytes until non-whitespace
-                        for &c in parameters.as_bytes() {
-                            if !c.is_ascii_whitespace() {
-                                break;
-                            }
-                            if c == b'\t' {
-                                return ScanLine::Err(ScriptError::TabInCommand);
-                            }
-                        }
-
-                        // first space was necessary to separate command from parameters
-                        if let Some(&c) = parameters.as_bytes().get(0) {
-                            if c.is_ascii_whitespace() {
-                                parameters = &parameters[1..];
-                            }
-                        }
-
+                        let parameters = &line[spliti..];
                         let opline = OpLine {command_index, parameters};
                         return ScanLine::Op {opline, remainder};
                     }
