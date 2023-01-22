@@ -1,11 +1,14 @@
 use core::cmp::max;
 use core::convert::TryInto;
 use core::ops::Range;
-use crate::scan::ScanOp;
+use crate::scan::{ScanOp, Script, script_next};
 use crate::execute::{Instruction, OP_DONE, Actor, execute};
-use crate::script::{Script, script_next};
-use crate::token::Token;
+use crate::token::{Token, Tokenizer, tokenize};
 use crate::typing::{DataType, Register, int_to_register, float_to_register, range_to_register};
+
+pub type Parser = fn (parameters: &mut Tokenizer, registers: &mut Compilation) -> Result<(), &'static str>;
+pub type Parsers<'a> = &'a [Parser];
+pub type Commands<'a> = &'a [&'a str];
 
 pub fn execute_event(compilation: &mut Compilation, event_name: &[u8]) -> Result<(), &'static str> {
     if let Some(location) = compilation.event_by_name(event_name) {
@@ -452,13 +455,11 @@ pub fn token_to_register_id(compilation: &mut Compilation, token: Token, constan
     }
 }
 
-pub type Parser = fn (parameters: &str, registers: &mut Compilation) -> Result<(), &'static str>;
-pub type Parsers<'a> = &'a [Parser];
-pub type Commands<'a> = &'a [&'a str];
-
 pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
 -> Result<Compilation, &'static str> {
-    debug_assert!(commands.len() == parsers.len());
+    if commands.len() != parsers.len() {
+        return Err("command list and parser list must be the same length");
+    }
 
     let mut script = Script::new(source);
     let mut compilation = Compilation::default();
@@ -467,16 +468,17 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
 
     loop {
         if compilation.next_instruction != 0 && script.source.len() >= prev_len {
-            return Err("no bytes processed");
+            return Err("internal error: no bytes processed");
         }
         prev_len = script.source.len();
 
-        let parseop = script_next(&mut script, commands);
+        let scanop = script_next(&mut script, commands);
 
-        match parseop {
+        match scanop {
             ScanOp::Op(op) => {
                 if let Some(parser) = parsers.get(op.command_index) {
-                    parser(op.parameters, &mut compilation)?;
+                    let mut tok = tokenize(op.parameters);
+                    parser(&mut tok, &mut compilation)?;
                 } else {
                     return Err("internal error: invalid command index");
                 }
@@ -509,7 +511,7 @@ mod tests {
         "set",
     ];
 
-    fn no(_: &str, _: &mut Compilation) -> Result<(), &'static str> {
+    fn no(_: &mut Tokenizer, _: &mut Compilation) -> Result<(), &'static str> {
         panic!("should not be called");
     }
 

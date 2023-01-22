@@ -76,6 +76,29 @@ pub struct Tokenizer<'a> {
 }
 
 impl<'a> Tokenizer<'a> {
+    pub fn expect_end_of_input(&mut self) -> Result<(), &'static str> {
+        match self.next() {
+            Token::Done => {
+                Ok(())
+            }
+            _ => {
+                // TODO: need proper usage of ::CommandEnd and ::Done because
+                // user shouldn't be told that end of line is end of input
+                Err("expected end of [...]")
+            }
+        }
+    }
+
+    pub fn expect_identifier(&mut self) -> Result<&'a [u8], &'static str> {
+        match self.next() {
+            Token::Identifier(val) => Ok(val.as_bytes()),
+            _ => {
+                // TODO: need to show token to user
+                Err("expected identifier")
+            }
+        }
+    }
+
     pub fn remainder(&self) -> &[u8] {
         self.source
     }
@@ -696,5 +719,25 @@ mod tests {
         let mut tokenizer = tokenize("one  two");
         assert_eq!(tokenizer.next(), Token::Identifier("one"));
         assert_eq!(tokenizer.remainder(), b" two");
+    }
+
+    #[test]
+    fn setting_expectations() {
+        let mut tok = tokenize("one");
+        assert_eq!(tok.expect_identifier(), Ok(&b"one"[..]));
+
+        let mut tok = tokenize("one");
+        assert!(tok.expect_end_of_input().is_err());
+
+        let mut tok = tokenize("one two");
+        assert_eq!(tok.expect_identifier(), Ok(&b"one"[..]));
+        assert_eq!(tok.expect_identifier(), Ok(&b"two"[..]));
+        assert!(tok.expect_end_of_input().is_ok());
+
+        let mut tok = tokenize("1");
+        assert!(tok.expect_end_of_input().is_err());
+
+        let mut tok = tokenize("1invalid");
+        assert!(tok.expect_end_of_input().is_err());
     }
 }

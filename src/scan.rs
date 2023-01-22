@@ -1,3 +1,4 @@
+use crate::compile::Commands;
 use crate::token::{tokenize, Token, Tokenizer};
 pub use self::ScriptError::*;
 
@@ -160,9 +161,32 @@ pub fn scan_line<'a>(mut program: &'a str, commands: &[&str]) -> ScanLine<'a> {
     }
 }
 
+pub struct Script<'a> {
+    pub source: &'a str,
+}
+
+impl<'a> Script<'a> {
+    pub fn new(source: &'a str) -> Script<'a> {
+        Script {source}
+    }
+}
+
+pub fn script_next<'a, 'b>(script: &'a mut Script, commands: Commands<'b>)
+-> ScanOp<'a> {
+    match scan_line(&script.source, commands) {
+        ScanLine::Done => ScanOp::Done,
+        ScanLine::Err(error) => ScanOp::Err(error),
+        ScanLine::Op {opline, remainder} => {
+            script.source = remainder;
+            ScanOp::Op(opline)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compile::Commands;
 
     const COMMANDS: &[&str] = &[
         "if", // 0
@@ -173,6 +197,46 @@ mod tests {
         "end event", // 5
         "version", // 6
     ];
+    const ENV: Commands = &[
+        "if",
+        "else if",
+        "end if",
+        "set",
+        "event",
+        "end event",
+        "version",
+    ];
+
+    #[test]
+    fn multiline() {
+        let mut script = Script::new("version 1\nevent um\nend event");
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 6, parameters: "1"}));
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 4, parameters: "um"}));
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 5, parameters: ""}));
+    }
+
+    #[test]
+    fn multi_whitespace() {
+        let mut script = Script::new("  version 1\n\nevent um\n\tend event");
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 6, parameters: "1"}));
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 4, parameters: "um"}));
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 5, parameters: ""}));
+    }
+
+    #[test]
+    fn parse_error() {
+        let mut script = Script::new("version 1\ne vent um\nend event");
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 6, parameters: "1"}));
+        assert!(script_next(&mut script, ENV).is_err());
+    }
+
+    #[test]
+    fn multi_windows() {
+        let mut script = Script::new("version 1\r\nevent um\r\nend event");
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 6, parameters: "1"}));
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 4, parameters: "um"}));
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 5, parameters: ""}));
+    }
 
     #[test]
     fn line_separation() {

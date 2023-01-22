@@ -1,9 +1,10 @@
 use std::fs::read_to_string;
-use std::io::Result as IOResult;
+use std::process::exit;
 use scripting::compile::{execute_compilation, Commands, Parsers, Compilation, execute_event};
 use scripting::execute::{OP_OUTBOX_WRITE, Instruction};
 use scripting::outbox::read_outbox;
 use scripting::parameter::{parse_if, parse_end_if, parse_set, parse_event, parse_end_event};
+use scripting::token::Tokenizer;
 use scripting::version::compile_with_version;
 
 const COMMANDS: Commands = &[
@@ -13,6 +14,7 @@ const COMMANDS: Commands = &[
     "event",
     "end event",
     "print",
+    "option",
 ];
 
 const PARSERS: Parsers = &[
@@ -22,15 +24,17 @@ const PARSERS: Parsers = &[
     parse_event,
     parse_end_event,
     parse_print,
+    parse_option,
 ];
 
-pub fn parse_print(parameters: &str, compilation: &mut Compilation)
+fn parse_print(tokenizer: &mut Tokenizer, compilation: &mut Compilation)
 -> Result<(), &'static str> {
+    let message = tokenizer.remainder();
 
-    let range = if parameters.len() == 0 {
+    let range = if message.len() == 0 {
         compilation.write_bytes(b" ")?
     } else {
-        compilation.write_bytes(parameters.as_bytes())?
+        compilation.write_bytes(message)?
     };
 
     let id = compilation.write_constant_range(range)?;
@@ -49,26 +53,31 @@ fn print_outbox(compilation: &mut Compilation) {
     }
 }
 
+fn parse_option(_tokenizer: &mut Tokenizer, _compilation: &mut Compilation)
+-> Result<(), &'static str> {
+
+    todo!();
+}
+
 const FILE_NAME: &str = "adventure.script";
 
-fn read_file() -> IOResult<String> {
+fn read_file() -> String {
     // TODO: let bytes = read("./adventure.script").unwrap();
 
     if let Ok(bytes) = read_to_string(format!("./{}", FILE_NAME)) {
-        return Ok(bytes);
+        return bytes;
     }
-    read_to_string(format!("./examples/text_adventure/{}", FILE_NAME))
+    match read_to_string(format!("./examples/text_adventure/{}", FILE_NAME)) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            eprintln!("Unable to read file \"{}\": {}", FILE_NAME, error.to_string());
+            exit(1);
+        }
+    }
 }
 
 fn main() {
-    let bytes = match read_file() {
-        Ok(b) => b,
-        Err(error) => {
-            eprintln!("Unable to read file \"{}\": {}", FILE_NAME, error.to_string());
-            return;
-        }
-    };
-
+    let bytes = read_file();
     let mut compilation = compile_with_version(&bytes, COMMANDS, PARSERS).unwrap();
 
     // Uncomment to see constant strings.

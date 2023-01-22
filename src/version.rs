@@ -1,6 +1,5 @@
 use crate::compile::{Compilation, compile, Commands, Parsers};
-use crate::scan::{OpLine, ScanOp, ScriptError};
-use crate::script::{Script, script_next};
+use crate::scan::{OpLine, ScanOp, ScriptError, Script, script_next};
 
 pub fn pick_version<'a>(script: &'a mut Script) -> Result<&'a str, &'static str> {
     match script_next(script, &["version"]) {

@@ -1,6 +1,6 @@
 use crate::compile::{Compilation, token_to_register_id, MAX_EVENT};
 use crate::execute::{Instruction, OP_MOVE, OP_INT_ADD, OP_INT_SUB, OP_INT_EQ, OP_INT_NE, OP_DONE, OP_INT_MUL, OP_INT_DIV};
-use crate::token::{Token, tokenize};
+use crate::token::{Token, Tokenizer};
 use crate::typing::DataType;
 
 fn match_register_types(compilation: &mut Compilation, ids: &[u8]) -> Result<(), &'static str> {
@@ -18,10 +18,7 @@ fn match_register_types(compilation: &mut Compilation, ids: &[u8]) -> Result<(),
     Err("unknown type")
 }
 
-pub fn parse_set(parameters: &str, compilation: &mut Compilation) -> Result<(), &'static str> {
-
-    let mut tok = tokenize(parameters);
-
+pub fn parse_set(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
     let dest = token_to_register_id(compilation, tok.next(), false)?;
 
     match tok.next() {
@@ -75,10 +72,7 @@ pub fn parse_set(parameters: &str, compilation: &mut Compilation) -> Result<(), 
     compilation.write_instruction(Instruction {opcode: op, reg_a: dest, reg_b: b, reg_c: c})
 }
 
-pub fn parse_if(parameters: &str, compilation: &mut Compilation) -> Result<(), &'static str> {
-
-    let mut tok = tokenize(parameters);
-
+pub fn parse_if(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
     let b = token_to_register_id(compilation, tok.next(), true)?;
 
     let op = match tok.next() {
@@ -111,15 +105,12 @@ pub fn parse_if(parameters: &str, compilation: &mut Compilation) -> Result<(), &
     };
 
     let c = token_to_register_id(compilation, tok.next(), true)?;
-    match tok.next() {
-        Token::Done => {}
-        _ => return Err("currently the if command only takes 2 terms separated by an operator, i.e. A = 1"),
-    }
+    tok.expect_end_of_input()?;
 
     match_register_types(compilation, &[b, c])?;
 
     // let data_type = registers.get_data_type(b);
-    // pick correct opcode type
+    // TODO: pick correct opcode type
 
     compilation.write_instruction(Instruction {opcode: op, reg_a: 0, reg_b: b, reg_c: c})
 }
@@ -131,10 +122,8 @@ fn is_branch_opcode(opcode: u8) -> bool {
     }
 }
 
-pub fn parse_end_if(parameters: &str, compilation: &mut Compilation) -> Result<(), &'static str> {
-    if parameters.len() > 0 {
-        return Err("end if doesn't take any parameters");
-    }
+pub fn parse_end_if(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
+    tok.expect_end_of_input()?;
 
     for dist in 0..compilation.next_instruction {
         let current_index = compilation.next_instruction - dist - 1;
@@ -157,22 +146,15 @@ pub fn parse_end_if(parameters: &str, compilation: &mut Compilation) -> Result<(
     Err("end if without if")
 }
 
-pub fn parse_event(parameters: &str, compilation: &mut Compilation) -> Result<(), &'static str> {
-    let mut tok = tokenize(parameters);
-    let name = match tok.next() {
-        Token::Identifier(name) => name,
-        _ => return Err("???"),
-    };
-    match tok.next() {
-        Token::Done => {},
-        _ => return Err("???"),
-    }
+pub fn parse_event(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
+    let name = tok.expect_identifier()?;
+    tok.expect_end_of_input()?;
 
     write_done(compilation)?;
 
     // TODO: need to check for failures in all casts
     let offset = compilation.next_instruction as u16;
-    compilation.write_event(name.as_bytes(), offset)
+    compilation.write_event(name, offset)
 }
 
 fn write_done(compilation: &mut Compilation) -> Result<(), &'static str> {
@@ -184,11 +166,9 @@ fn write_done(compilation: &mut Compilation) -> Result<(), &'static str> {
     compilation.write_instruction(Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0})
 }
 
-pub fn parse_end_event(parameters: &str, compilation: &mut Compilation)
+pub fn parse_end_event(tok: &mut Tokenizer, compilation: &mut Compilation)
 -> Result<(), &'static str> {
-    if parameters.len() > 0 {
-        return Err("end event doesn't take any parameters");
-    }
+    tok.expect_end_of_input()?;
 
     compilation.write_instruction(Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0})
     // write_done(instructions) // this would only serve as an optimization for an empty event
