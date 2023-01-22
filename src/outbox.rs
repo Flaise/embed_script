@@ -117,6 +117,7 @@ mod tests {
             instructions: &[],
             constants: &[],
             outbox: &mut [0; 5],
+            names: &[],
         };
 
         write_outbox_message(actor.outbox, &[1, 2, 3]).unwrap();
@@ -135,6 +136,7 @@ mod tests {
             instructions: &[],
             constants: &[],
             outbox: &mut [0; 20],
+            names: &[],
         };
 
         write_outbox_message_tagged(actor.outbox, 99, &[1, 2, 3]).unwrap();

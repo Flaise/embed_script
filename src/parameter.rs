@@ -167,8 +167,8 @@ pub fn parse_end_event(tok: &mut Tokenizer, compilation: &mut Compilation)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compile::{compile, execute_compilation, execute_event, Commands, Parsers};
-    use crate::execute::OP_DONE;
+    use crate::compile::{compile, execute_compilation, Commands, Parsers};
+    use crate::execute::{OP_DONE, execute_event};
     use crate::parameter::{parse_if, parse_end_if, parse_set};
     use crate::typing::{float_to_register, int_to_register};
 
@@ -450,7 +450,7 @@ mod tests {
         ";
 
         let mut comp = compile(source, COMMANDS, PARSERS).unwrap();
-        execute_event(&mut comp, b"do_something").unwrap();
+        execute_event(&mut comp.as_actor(), b"do_something").unwrap();
 
         assert_eq!(comp.registers[comp.register_by_name(b"thing").unwrap() as usize], 10000);
     }
@@ -465,7 +465,7 @@ mod tests {
         ";
 
         let mut comp = compile(source, COMMANDS, PARSERS).unwrap();
-        execute_event(&mut comp, b"do_something").unwrap();
+        execute_event(&mut comp.as_actor(), b"do_something").unwrap();
 
         assert_eq!(comp.registers[comp.register_by_name(b"thing").unwrap() as usize], 10000);
     }
@@ -479,7 +479,7 @@ mod tests {
         ";
 
         let mut comp = compile(source, COMMANDS, PARSERS).unwrap();
-        execute_event(&mut comp, b"do_something").unwrap();
+        execute_event(&mut comp.as_actor(), b"do_something").unwrap();
 
         assert_eq!(comp.registers[comp.register_by_name(b"thing").unwrap() as usize], 0);
     }
@@ -498,7 +498,7 @@ mod tests {
         ";
 
         let mut comp = compile(source, COMMANDS, PARSERS).unwrap();
-        execute_event(&mut comp, b"do_something").unwrap();
+        execute_event(&mut comp.as_actor(), b"do_something").unwrap();
 
         assert_eq!(comp.registers[comp.register_by_name(b"thing").unwrap() as usize], 10000);
     }

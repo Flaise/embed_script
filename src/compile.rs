@@ -2,7 +2,7 @@ use core::cmp::max;
 use core::convert::TryInto;
 use core::ops::Range;
 use crate::scan::{ScanOp, Script, script_next};
-use crate::execute::{Instruction, OP_DONE, Actor, execute};
+use crate::execute::{Instruction, OP_DONE, Actor};
 use crate::token::{Token, Tokenizer, tokenize};
 use crate::typing::{DataType, Register, int_to_register, float_to_register, range_to_register};
 
@@ -10,18 +10,12 @@ pub type Parser = fn (parameters: &mut Tokenizer, registers: &mut Compilation) -
 pub type Parsers<'a> = &'a [Parser];
 pub type Commands<'a> = &'a [&'a str];
 
-pub fn execute_event(compilation: &mut Compilation, event_name: &[u8]) -> Result<(), &'static str> {
-    if let Some(location) = compilation.event_by_name(event_name) {
-        let mut actor = compilation.as_actor();
-        execute(&mut actor, location)
-    } else {
-        Err("event not found")
-    }
-}
-
+#[cfg(test)]
 pub fn execute_compilation(compilation: &mut Compilation) -> Result<(), &'static str> {
+    use crate::execute::execute_at;
+
     let mut actor = compilation.as_actor();
-    execute(&mut actor, 0)
+    execute_at(&mut actor, 0)
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -35,7 +29,7 @@ const EVENT_BIT_16: u16 = 0b1000_0000_0000_0000;
 pub const MAX_EVENT: u16 = 0b0111_1111_1111_1111;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-struct NameSpec {
+pub struct NameSpec {
     start: u16,
     end: u16,
     /// First bit == 1 -> event, otherwise -> register.
@@ -68,6 +62,15 @@ impl NameSpec {
         let location = self.register_or_event & !EVENT_BIT_16;
         Some(location)
     }
+}
+
+pub fn event_by_name(names: &[NameSpec], other_bytes: &[u8], check: &[u8]) -> Option<u16> {
+    for spec in names {
+        if spec.pick_bytes(other_bytes).eq_ignore_ascii_case(check) {
+            return spec.event_location();
+        }
+    }
+    None
 }
 
 #[derive(Debug)]
@@ -152,7 +155,8 @@ impl Compilation {
         let (constants, outbox) = self.other_bytes.split_at_mut(self.next_byte);
         let registers = &mut self.registers[..self.next_register];
         let instructions = &self.instructions[..self.next_instruction];
-        Actor {registers, instructions, constants, outbox}
+        let names = &self.names[..self.next_name];
+        Actor {registers, instructions, constants, outbox, names}
     }
 
     pub fn register_by_name(&self, check: &[u8]) -> Option<u8> {
@@ -172,12 +176,7 @@ impl Compilation {
     }
 
     pub fn event_by_name(&self, check: &[u8]) -> Option<u16> {
-        for spec in self.valid_names() {
-            if spec.pick_bytes(&self.other_bytes).eq_ignore_ascii_case(check) {
-                return spec.event_location();
-            }
-        }
-        None
+        event_by_name(&self.names[..self.next_name], &self.other_bytes, check)
     }
 
     pub fn write_bytes_and_register(&mut self, value: &[u8]) -> Result<u8, &'static str> {

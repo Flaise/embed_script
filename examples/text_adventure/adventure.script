@@ -6,7 +6,7 @@ print A simple text-based adventure game made with a new scripting language.
 print
 
 option starting: Start
-option exiting: Never Mind!
+option exiting : Never Mind!
 
 event starting
     print Apparently it's up to you to save the world.

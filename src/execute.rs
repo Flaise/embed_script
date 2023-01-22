@@ -1,3 +1,4 @@
+use crate::compile::{NameSpec, event_by_name};
 use crate::outbox::{write_outbox_message, write_outbox_message_tagged};
 use crate::typing::{Register, int_to_register, register_to_int, register_to_range};
 
@@ -44,12 +45,31 @@ fn validate_branch(inst_len: usize, counter: usize, reg_a: u8) -> Result<(), &'s
 
 pub struct Actor<'a> {
     pub registers: &'a mut [Register],
+    pub names: &'a [NameSpec],
     pub instructions: &'a [Instruction],
     pub constants: &'a [u8],
     pub outbox: &'a mut [u8],
 }
 
-pub fn execute(actor: &mut Actor, location: u16) -> Result<(), &'static str> {
+impl<'a> Actor<'a> {
+    pub fn event_by_name(&self, check: &[u8]) -> Option<u16> {
+        event_by_name(self.names, self.constants, check)
+    }
+}
+
+pub fn execute_event<'a: 'b, 'b>(actor: &'a mut Actor, event_name: &'b [u8]) -> Result<(), &'static str> {
+    if let Some(location) = event_by_name(actor.names, actor.constants, event_name) {
+        execute_at(actor, location)
+    } else {
+        Err("event not found")
+    }
+}
+
+pub fn execute(actor: &mut Actor) -> Result<(), &'static str> {
+    execute_at(actor, 0)
+}
+
+pub fn execute_at(actor: &mut Actor, location: u16) -> Result<(), &'static str> {
     actor.outbox.fill(0);
 
     let mut next_out_byte = 0;
@@ -168,8 +188,9 @@ mod tests {
             instructions: &[Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 0, reg_c: 0}],
             constants: &[],
             outbox: &mut [],
+            names: &[],
         };
-        execute(&mut actor, 0).unwrap();
+        execute_at(&mut actor, 0).unwrap();
         assert_eq!(actor.registers, &[2, 3, 2]);
 
         let mut actor = Actor {
@@ -177,8 +198,9 @@ mod tests {
             instructions: &[Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 1, reg_c: 0}],
             constants: &[],
             outbox: &mut [],
+            names: &[],
         };
-        execute(&mut actor, 0).unwrap();
+        execute_at(&mut actor, 0).unwrap();
         assert_eq!(actor.registers, &[2, 3, 3]);
     }
 
@@ -189,8 +211,9 @@ mod tests {
             instructions: &[Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1}],
             constants: &[],
             outbox: &mut [],
+            names: &[],
         };
-        execute(&mut actor, 0).unwrap();
+        execute_at(&mut actor, 0).unwrap();
         assert_eq!(actor.registers, &[2, 3, 5]);
     }
 
@@ -201,8 +224,9 @@ mod tests {
             instructions: &[Instruction {opcode: OP_INT_SUB, reg_a: 2, reg_b: 0, reg_c: 1}],
             constants: &[],
             outbox: &mut [],
+            names: &[],
         };
-        execute(&mut actor, 0).unwrap();
+        execute_at(&mut actor, 0).unwrap();
         assert_eq!(actor.registers, &[2, 3, int_to_register(-1)]);
     }
 
@@ -213,8 +237,9 @@ mod tests {
             instructions: &[Instruction {opcode: OP_INT_MUL, reg_a: 2, reg_b: 0, reg_c: 1}],
             constants: &[],
             outbox: &mut [],
+            names: &[],
         };
-        execute(&mut actor, 0).unwrap();
+        execute_at(&mut actor, 0).unwrap();
         assert_eq!(actor.registers, &[2, 3, 6]);
     }
 
@@ -225,8 +250,9 @@ mod tests {
             instructions: &[Instruction {opcode: OP_INT_DIV, reg_a: 2, reg_b: 0, reg_c: 1}],
             constants: &[],
             outbox: &mut [],
+            names: &[],
         };
-        execute(&mut actor, 0).unwrap();
+        execute_at(&mut actor, 0).unwrap();
         assert_eq!(actor.registers, &[12, 3, 4]);
     }
 
@@ -240,8 +266,9 @@ mod tests {
             ],
             constants: &[],
             outbox: &mut [],
+            names: &[],
         };
-        execute(&mut actor, 0).unwrap();
+        execute_at(&mut actor, 0).unwrap();
         assert_eq!(actor.registers, &[2, 3, 5]);
     }
 
@@ -255,8 +282,9 @@ mod tests {
             ],
             constants: &[],
             outbox: &mut [],
+            names: &[],
         };
-        execute(&mut actor, 0).unwrap();
+        execute_at(&mut actor, 0).unwrap();
         assert_eq!(actor.registers, &[3, 3, 0]);
     }
 
@@ -270,8 +298,9 @@ mod tests {
             ],
             constants: &[],
             outbox: &mut [],
+            names: &[],
         };
-        execute(&mut actor, 0).unwrap_err();
+        execute_at(&mut actor, 0).unwrap_err();
     }
 
     #[test]
@@ -284,8 +313,9 @@ mod tests {
             ],
             constants: &[],
             outbox: &mut [],
+            names: &[],
         };
-        execute(&mut actor, 0).unwrap();
+        execute_at(&mut actor, 0).unwrap();
         assert_eq!(actor.registers, &[0, 0, 0]);
 
         let mut actor = Actor {
@@ -295,8 +325,9 @@ mod tests {
             ],
             constants: &[],
             outbox: &mut [],
+            names: &[],
         };
-        execute(&mut actor, 0).unwrap();
+        execute_at(&mut actor, 0).unwrap();
         assert_eq!(actor.registers, &[0, 0, 0]);
     }
 
@@ -310,11 +341,12 @@ mod tests {
             ],
             constants: &[],
             outbox: &mut [],
+            names: &[],
         };
-        execute(&mut actor, 0).unwrap();
+        execute_at(&mut actor, 0).unwrap();
         assert_eq!(actor.registers, &[0, 100, 0]);
 
-        execute(&mut actor, 1).unwrap();
+        execute_at(&mut actor, 1).unwrap();
         assert_eq!(actor.registers, &[100, 100, 0]);
     }
 
@@ -327,15 +359,16 @@ mod tests {
             ],
             constants: b"1234",
             outbox: &mut [0; 6],
+            names: &[],
         };
-        execute(&mut actor, 0).unwrap();
+        execute_at(&mut actor, 0).unwrap();
 
         let mut r = read_outbox(&actor);
         assert_eq!(r.next(), Some(&b"1234"[..]));
         assert_eq!(r.next(), None);
 
         // same result because writing starts over from beginning
-        execute(&mut actor, 0).unwrap();
+        execute_at(&mut actor, 0).unwrap();
         let mut r = read_outbox(&actor);
         assert_eq!(r.next(), Some(&b"1234"[..]));
         assert_eq!(r.next(), None);
@@ -354,8 +387,9 @@ mod tests {
             ],
             constants: b"1234abcd",
             outbox: &mut [0; 11],
+            names: &[],
         };
-        execute(&mut actor, 0).unwrap();
+        execute_at(&mut actor, 0).unwrap();
 
         let mut r = read_outbox(&actor);
         assert_eq!(r.next(), Some(&b"1234"[..]));
@@ -379,7 +413,7 @@ mod tests {
         comp.write_instruction(Instruction {opcode: OP_OUTBOX_WRITE, reg_a: id_c, reg_b: 0, reg_c: 0}).unwrap();
 
         let mut actor = comp.as_actor();
-        execute(&mut actor, 0).unwrap();
+        execute_at(&mut actor, 0).unwrap();
 
         let mut r = read_outbox(&actor);
         assert_eq!(r.next(), Some(&b"1234"[..]));
@@ -401,13 +435,14 @@ mod tests {
             ],
             constants: b"1234abcd",
             outbox: &mut [0; 11],
+            names: &[],
         };
-        execute(&mut actor, 0).unwrap();
+        execute_at(&mut actor, 0).unwrap();
 
         actor.instructions = &[
             Instruction {opcode: OP_OUTBOX_WRITE, reg_a: 0, reg_b: 0, reg_c: 0},
         ];
-        execute(&mut actor, 0).unwrap();
+        execute_at(&mut actor, 0).unwrap();
 
         let mut r = read_outbox(&actor);
         assert_eq!(r.next(), Some(&b"1234"[..]));
