@@ -134,11 +134,16 @@ fn process_outbox(actor: &Actor) -> Vec<u8> {
     }
 
     loop {
-        print!("\ninput selection > ");
+        print!("\ninput selection (Q to quit) > ");
         stdout().flush().unwrap();
 
         let read = stdin();
         let line = read.lock().lines().next().unwrap().unwrap();
+        let line = line.trim();
+
+        if line == "q" || line == "Q" {
+            return b"exiting".to_vec();
+        }
 
         match line.parse::<usize>() {
             Ok(num) => {

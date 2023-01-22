@@ -1,11 +1,13 @@
 version 1
 
-print === ADVENTURE GAME ===
+print     ========================
+print     ==== ADVENTURE GAME ====
+print     ========================
 print
 print     A simple text-based adventure game made with a new scripting language.
 print
 print Apparently it's up to you to save the world.
-print You are standing outside in the middle of a small town. The buildings are made mostly of wood and they're old but in decent repair. To the north is the clock tower, tall and imposing but difficult to read at this hour. It's 6:00 in the morning. To the east, a bit of a walk from here, is the workshop that the local mage lives and works at.
+print You are standing outside in the middle of a small town. The buildings are made mostly of wood and they're old but in decent repair. To the north is the clock tower, tall and imposing but difficult to read at this hour. It's about 6:00 in the morning. To the east, a bit of a walk from here, is the workshop that the local mage lives and works at.
 
 option clock_tower: north - The Clock Tower
 option workshop   : east  - The Mage's Workshop
@@ -18,7 +20,7 @@ event town_square
 end event
 
 event workshop
-    print You're in front of the mage's workshop. You can't recall seeing him away from his workshop, but you've visited a few times over the years to buy trinkets and have small items repaired.
+    print You're in front of the mage's workshop. You can't recall seeing him away from his workshop, but you've visited a few times over the years to buy trinkets and have small items repaired. Maybe it would be worthwhile to talk to him about saving the world.
 
     option workshop_door: Knock on the door
     option town_square  : Leave
@@ -45,4 +47,8 @@ event clock_tower
     set visited_clock: 1
 
     option town_square: Leave
+end event
+
+event exiting
+    print Never mind. The world can save itself.
 end event
