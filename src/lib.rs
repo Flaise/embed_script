@@ -2,6 +2,7 @@
 
 pub mod compile;
 pub mod execute;
+pub mod outbox;
 pub mod parameter;
 mod scan;
 mod script;

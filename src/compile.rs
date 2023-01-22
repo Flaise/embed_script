@@ -653,5 +653,4 @@ mod tests {
         assert_eq!(wr.pick_registers()[0], range_to_register(1, 5));
     }
 
-
 }

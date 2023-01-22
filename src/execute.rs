@@ -1,3 +1,4 @@
+use crate::outbox::write_outbox_message;
 use crate::typing::{Register, int_to_register, register_to_int, register_to_range};
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
@@ -47,6 +48,8 @@ pub struct Actor<'a> {
 }
 
 pub fn execute(actor: &mut Actor, location: u16) -> Result<(), &'static str> {
+    actor.outbox.fill(0);
+
     let mut next_out_byte = 0;
 
     let mut counter = location as usize;
@@ -127,9 +130,9 @@ pub fn execute(actor: &mut Actor, location: u16) -> Result<(), &'static str> {
             OP_OUTBOX_WRITE => {
                 let av = actor.registers[inst.reg_a as usize];
                 let bytes = &actor.constants[register_to_range(av)];
-                let dest = &mut actor.outbox[next_out_byte..next_out_byte + bytes.len()];
-                dest.copy_from_slice(bytes);
-                next_out_byte += bytes.len();
+
+                write_outbox_message(&mut actor.outbox[next_out_byte..], bytes)?;
+                next_out_byte += bytes.len() + 2;
             }
             _ => return Err("invalid opcode"),
         }
@@ -142,6 +145,7 @@ pub fn execute(actor: &mut Actor, location: u16) -> Result<(), &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::outbox::read_outbox;
     use crate::typing::{int_to_register, range_to_register};
 
     #[test]
@@ -309,14 +313,19 @@ mod tests {
                 Instruction {opcode: OP_OUTBOX_WRITE, reg_a: 0, reg_b: 0, reg_c: 0},
             ],
             constants: b"1234",
-            outbox: &mut [0; 4],
+            outbox: &mut [0; 6],
         };
         execute(&mut actor, 0).unwrap();
-        assert_eq!(actor.outbox, b"1234");
+
+        let mut r = read_outbox(&actor);
+        assert_eq!(r.next(), Some(&b"1234"[..]));
+        assert_eq!(r.next(), None);
 
         // same result because writing starts over from beginning
         execute(&mut actor, 0).unwrap();
-        assert_eq!(actor.outbox, b"1234");
+        let mut r = read_outbox(&actor);
+        assert_eq!(r.next(), Some(&b"1234"[..]));
+        assert_eq!(r.next(), None);
     }
 
     #[test]
@@ -331,10 +340,40 @@ mod tests {
                 Instruction {opcode: OP_OUTBOX_WRITE, reg_a: 1, reg_b: 0, reg_c: 0},
             ],
             constants: b"1234abcd",
-            outbox: &mut [0; 8],
+            outbox: &mut [0; 11],
         };
         execute(&mut actor, 0).unwrap();
-        assert_eq!(actor.outbox, b"1234abc\0");
+
+        let mut r = read_outbox(&actor);
+        assert_eq!(r.next(), Some(&b"1234"[..]));
+        assert_eq!(r.next(), Some(&b"abc"[..]));
+        assert_eq!(r.next(), None);
+    }
+
+    #[test]
+    fn smaller_outbox() {
+        let mut actor = Actor {
+            registers: &mut [
+                range_to_register(0, 4),
+                range_to_register(4, 7),
+            ],
+            instructions: &[
+                Instruction {opcode: OP_OUTBOX_WRITE, reg_a: 0, reg_b: 0, reg_c: 0},
+                Instruction {opcode: OP_OUTBOX_WRITE, reg_a: 1, reg_b: 0, reg_c: 0},
+            ],
+            constants: b"1234abcd",
+            outbox: &mut [0; 11],
+        };
+        execute(&mut actor, 0).unwrap();
+
+        actor.instructions = &[
+            Instruction {opcode: OP_OUTBOX_WRITE, reg_a: 0, reg_b: 0, reg_c: 0},
+        ];
+        execute(&mut actor, 0).unwrap();
+
+        let mut r = read_outbox(&actor);
+        assert_eq!(r.next(), Some(&b"1234"[..]));
+        assert_eq!(r.next(), None);
     }
 
 }
