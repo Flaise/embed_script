@@ -1,5 +1,5 @@
 use crate::compile::{Compilation, token_to_register_id, MAX_EVENT};
-use crate::execute::{Instruction, OP_MOVE, OP_INT_ADD, OP_INT_SUB, OP_INT_EQ, OP_INT_NE, OP_DONE};
+use crate::execute::{Instruction, OP_MOVE, OP_INT_ADD, OP_INT_SUB, OP_INT_EQ, OP_INT_NE, OP_DONE, OP_INT_MUL, OP_INT_DIV};
 use crate::token::{Token, tokenize};
 use crate::typing::DataType;
 
@@ -36,6 +36,8 @@ pub fn parse_set(parameters: &str, compilation: &mut Compilation) -> Result<(), 
             match sym {
                 "+" => OP_INT_ADD,
                 "-" => OP_INT_SUB,
+                "*" => OP_INT_MUL,
+                "/" => OP_INT_DIV,
                 _ => return Err("unknown operator"),
             }
         }
@@ -289,6 +291,22 @@ mod tests {
 
         assert_eq!(&comp.registers[0..3], &[0, 0, 7]);
         assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_SUB, reg_a: 0, reg_b: 1, reg_c: 2}]);
+    }
+
+    #[test]
+    fn multiplication() {
+        let comp = compile("set r: a * 7", COMMANDS, PARSERS).unwrap();
+
+        assert_eq!(comp.pick_registers(), &[0, 0, 7]);
+        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_MUL, reg_a: 0, reg_b: 1, reg_c: 2}]);
+    }
+
+    #[test]
+    fn division() {
+        let comp = compile("set r: a / 7", COMMANDS, PARSERS).unwrap();
+
+        assert_eq!(comp.pick_registers(), &[0, 0, 7]);
+        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_DIV, reg_a: 0, reg_b: 1, reg_c: 2}]);
     }
 
     #[test]

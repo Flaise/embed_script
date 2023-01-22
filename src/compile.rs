@@ -110,7 +110,11 @@ impl Compilation {
         &self.other_bytes[..self.next_byte]
     }
 
-    pub fn pick_registers(&mut self) -> &mut [Register] {
+    pub fn pick_registers(&self) -> &[Register] {
+        &self.registers[..self.next_register]
+    }
+
+    pub fn pick_registers_mut(&mut self) -> &mut [Register] {
         &mut self.registers[..self.next_register]
     }
 
