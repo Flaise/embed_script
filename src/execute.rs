@@ -24,8 +24,12 @@ pub const OP_INT_NE: u8 = 6;
 pub const OP_INT_ADD: u8 = 7;
 /// R(A) <- R(B) - R(C)
 pub const OP_INT_SUB: u8 = 8;
+/// R(A) <- R(B) * R(C)
+pub const OP_INT_MUL: u8 = 9;
+/// R(A) <- R(B) / R(C)
+pub const OP_INT_DIV: u8 = 10;
 /// outbox[...] <- constants[range(R(A))]
-pub const OP_OUTBOX_WRITE: u8 = 9;
+pub const OP_OUTBOX_WRITE: u8 = 11;
 
 fn validate_branch(inst_len: usize, counter: usize, reg_a: u8) -> Result<(), &'static str> {
     debug_assert!(inst_len > counter);
@@ -70,6 +74,24 @@ pub fn execute(actor: &mut Actor, location: u16) -> Result<(), &'static str> {
                 let bi = register_to_int(bv);
                 let ci = register_to_int(cv);
                 if let Some(a) = bi.checked_sub(ci) {
+                    actor.registers[inst.reg_a as usize] = int_to_register(a);
+                } else {
+                    todo!();
+                }
+            }
+            OP_INT_MUL => {
+                let bi = register_to_int(bv);
+                let ci = register_to_int(cv);
+                if let Some(a) = bi.checked_mul(ci) {
+                    actor.registers[inst.reg_a as usize] = int_to_register(a);
+                } else {
+                    todo!();
+                }
+            }
+            OP_INT_DIV => {
+                let bi = register_to_int(bv);
+                let ci = register_to_int(cv);
+                if let Some(a) = bi.checked_div(ci) {
                     actor.registers[inst.reg_a as usize] = int_to_register(a);
                 } else {
                     todo!();
@@ -165,6 +187,30 @@ mod tests {
         };
         execute(&mut actor, 0).unwrap();
         assert_eq!(actor.registers, &[2, 3, int_to_register(-1)]);
+    }
+
+    #[test]
+    fn multiplication() {
+        let mut actor = Actor {
+            registers: &mut [2, 3, 0],
+            instructions: &[Instruction {opcode: OP_INT_MUL, reg_a: 2, reg_b: 0, reg_c: 1}],
+            constants: &[],
+            outbox: &mut [],
+        };
+        execute(&mut actor, 0).unwrap();
+        assert_eq!(actor.registers, &[2, 3, 6]);
+    }
+
+    #[test]
+    fn division() {
+        let mut actor = Actor {
+            registers: &mut [12, 3, 0],
+            instructions: &[Instruction {opcode: OP_INT_DIV, reg_a: 2, reg_b: 0, reg_c: 1}],
+            constants: &[],
+            outbox: &mut [],
+        };
+        execute(&mut actor, 0).unwrap();
+        assert_eq!(actor.registers, &[12, 3, 4]);
     }
 
     #[test]
