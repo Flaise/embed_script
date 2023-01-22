@@ -47,6 +47,21 @@ pub fn write_outbox_message(dest: &mut [u8], message: &[u8]) -> Result<(), &'sta
     Ok(())
 }
 
+pub fn write_outbox_message_tagged(dest: &mut [u8], tag: u8, message: &[u8])
+-> Result<(), &'static str> {
+    if message.len() > u16::MAX as usize {
+        return Err("message length is too long");
+    }
+    if dest.len() < message.len() + 3 {
+        return Err("not enough room in outbox for message");
+    }
+    let len_bytes = (1 + message.len() as u16).to_be_bytes();
+    dest[0..2].copy_from_slice(&len_bytes);
+    dest[2] = tag;
+    dest[3..message.len() + 3].copy_from_slice(message);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,6 +124,26 @@ mod tests {
 
         let mut r = read_outbox(&actor);
         assert_eq!(r.next(), Some(&[1, 2, 3][..]));
+        assert_eq!(r.next(), None);
+        assert_eq!(r.next(), None);
+    }
+
+    #[test]
+    fn tagged_messages() {
+        let actor = Actor {
+            registers: &mut [],
+            instructions: &[],
+            constants: &[],
+            outbox: &mut [0; 20],
+        };
+
+        write_outbox_message_tagged(actor.outbox, 99, &[1, 2, 3]).unwrap();
+        write_outbox_message_tagged(&mut actor.outbox[6..], 111, &[5, 7, 6, 7]).unwrap();
+        assert_eq!(&actor.outbox[..13], &[0, 4, 99, 1, 2, 3, 0, 5, 111, 5, 7, 6, 7]);
+
+        let mut r = read_outbox(&actor);
+        assert_eq!(r.next(), Some(&[99, 1, 2, 3][..]));
+        assert_eq!(r.next(), Some(&[111, 5, 7, 6, 7][..]));
         assert_eq!(r.next(), None);
         assert_eq!(r.next(), None);
     }

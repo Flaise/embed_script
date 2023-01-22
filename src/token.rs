@@ -120,6 +120,13 @@ impl<'a> Tokenizer<'a> {
         self.source
     }
 
+    pub fn expect_remainder(&self) -> Result<&[u8], &'static str> {
+        if self.source.len() == 0 {
+            return Err("expected parameters, not end of command");
+        }
+        Ok(self.source)
+    }
+
     pub fn next(&mut self) -> Token<'a> {
         let next = self.next_token.take().unwrap_or_else(|| self.next_simple());
         self.last_result = match next {

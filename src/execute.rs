@@ -1,4 +1,4 @@
-use crate::outbox::write_outbox_message;
+use crate::outbox::{write_outbox_message, write_outbox_message_tagged};
 use crate::typing::{Register, int_to_register, register_to_int, register_to_range};
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
@@ -31,6 +31,8 @@ pub const OP_INT_MUL: u8 = 9;
 pub const OP_INT_DIV: u8 = 10;
 /// outbox[...] <- constants[range(R(A))]
 pub const OP_OUTBOX_WRITE: u8 = 11;
+/// outbox[...] <- B, constants[range(R(A))]
+pub const OP_OUTBOX_TAGGED: u8 = 12;
 
 fn validate_branch(inst_len: usize, counter: usize, reg_a: u8) -> Result<(), &'static str> {
     debug_assert!(inst_len > counter);
@@ -128,11 +130,21 @@ pub fn execute(actor: &mut Actor, location: u16) -> Result<(), &'static str> {
                 return Ok(());
             }
             OP_OUTBOX_WRITE => {
+                debug_assert_eq!(inst.reg_b, 0, "OP_OUTBOX_WRITE doesn't use parameter B. Did you mean OP_OUTBOX_TAGGED?");
+
                 let av = actor.registers[inst.reg_a as usize];
                 let bytes = &actor.constants[register_to_range(av)];
 
                 write_outbox_message(&mut actor.outbox[next_out_byte..], bytes)?;
                 next_out_byte += bytes.len() + 2;
+            }
+            OP_OUTBOX_TAGGED => {
+                let av = actor.registers[inst.reg_a as usize];
+                let bytes = &actor.constants[register_to_range(av)];
+
+                write_outbox_message_tagged(&mut actor.outbox[next_out_byte..], inst.reg_b, bytes)?;
+                next_out_byte += bytes.len() + 3;
+
             }
             _ => return Err("invalid opcode"),
         }
