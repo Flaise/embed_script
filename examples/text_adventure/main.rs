@@ -83,6 +83,7 @@ fn outbox_output(actor: &Actor) -> Vec<String> {
 
     let mut options = vec![];
     let mut options_printed = 0;
+    let mut option_labels = vec![];
 
     for bytes in read_outbox(&actor) {
         let tag = bytes[0];
@@ -96,7 +97,7 @@ fn outbox_output(actor: &Actor) -> Vec<String> {
             }
             TAG_OPTION_TEXT => {
                 options_printed += 1;
-                println!("    [{}] {}", options_printed, String::from_utf8_lossy(message));
+                option_labels.push(format!("    [{}] {}", options_printed, String::from_utf8_lossy(message)));
             }
             _ => {
                 println!("internal error: unknown tag {}", tag);
@@ -110,6 +111,13 @@ fn outbox_output(actor: &Actor) -> Vec<String> {
     }
     if options.len() > 9 {
         panic!("script error: too many options, must be 1-9");
+    }
+
+    if option_labels.len() > 0 {
+        println!();
+        for label in option_labels {
+            println!("{}", label);
+        }
     }
 
     options
