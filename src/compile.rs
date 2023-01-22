@@ -1,3 +1,4 @@
+use core::cmp::max;
 use core::convert::TryInto;
 use core::ops::Range;
 use crate::scan::ScanOp;
@@ -208,7 +209,7 @@ impl Compilation {
             return Err("not enough room for constant bytes");
         }
         self.other_bytes[start..end].copy_from_slice(value);
-        self.next_byte = end;
+        self.next_byte = max(self.next_byte, end);
 
         Ok(start as u16..end as u16)
     }
@@ -646,6 +647,17 @@ mod tests {
         assert_eq!(wr.pick_constants(), b"abcd");
         assert_eq!(wr.write_bytes(b"cd12"), Ok(2..6));
         assert_eq!(wr.pick_constants(), b"abcd12");
+    }
+
+    #[test]
+    fn string_inset() {
+        let mut wr = Compilation::default();
+        assert_eq!(wr.write_bytes(b"abcd"), Ok(0..4));
+        assert_eq!(wr.pick_constants(), b"abcd");
+        assert_eq!(wr.write_bytes(b"b"), Ok(1..2));
+        assert_eq!(wr.pick_constants(), b"abcd");
+        assert_eq!(wr.write_bytes(b"1234"), Ok(4..8));
+        assert_eq!(wr.pick_constants(), b"abcd1234");
     }
 
     #[test]
