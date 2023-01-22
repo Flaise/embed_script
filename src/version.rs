@@ -1,9 +1,7 @@
-#[cfg(test)]
+use crate::compile::{Compilation, compile, Commands, Parsers};
 use crate::scan::{OpLine, ScanOp, ScriptError};
-#[cfg(test)]
 use crate::script::{Script, script_next};
 
-#[cfg(test)]
 pub fn pick_version<'a>(script: &'a mut Script) -> Result<&'a str, &'static str> {
     match script_next(script, &["version"]) {
         ScanOp::Done => Err("version not found"),
@@ -20,9 +18,23 @@ pub fn pick_version<'a>(script: &'a mut Script) -> Result<&'a str, &'static str>
     }
 }
 
+pub fn compile_with_version(source: &str, commands: Commands, parsers: Parsers)
+-> Result<Compilation, &'static str> {
+
+    let mut script = Script::new(source);
+    let version = pick_version(&mut script)?;
+    if version != "1" {
+        return Err("the only supported version is 1");
+    }
+
+    compile(script.source, commands, parsers)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::execute::{Instruction, OP_DONE, OP_MOVE};
+    use crate::parameter::parse_set;
 
     #[test]
     fn version_parse() {
@@ -61,5 +73,22 @@ mod tests {
     fn version_not_first() {
         let script = &mut Script::new("set r: 2\nversion 5");
         assert_eq!(pick_version(script), Err("'version' must be the first command in the script"));
+    }
+
+    const COMMANDS: Commands = &["set"];
+    const PARSERS: Parsers = &[parse_set];
+
+    #[test]
+    fn compilation_success() {
+        let comp = compile_with_version("version 1\nset r: 2", COMMANDS, PARSERS).unwrap();
+        assert_eq!(comp.pick_instructions(), &[
+            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+        ]);
+    }
+
+    #[test]
+    fn compilation_failure() {
+        compile_with_version("version 0\nset r: 2", COMMANDS, PARSERS).unwrap_err();
     }
 }

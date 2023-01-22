@@ -6,5 +6,5 @@ pub mod parameter;
 mod scan;
 mod script;
 mod token;
-mod typing;
-mod version;
+pub mod typing;
+pub mod version;

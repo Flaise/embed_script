@@ -9,6 +9,7 @@ pub enum DataType {
     Unknown,
     I32,
     F32,
+    Range,
 }
 
 pub fn register_to_int(reg: Register) -> i32 {
@@ -28,7 +29,6 @@ pub fn float_to_register(val: f32) -> Register {
     unsafe { transmute(val) }
 }
 
-#[cfg(test)]
 pub fn range_to_register(start: u16, end_exclusive: u16) -> Register {
     let [a, b] = start.to_be_bytes();
     let [c, d] = end_exclusive.to_be_bytes();

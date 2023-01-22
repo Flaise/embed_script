@@ -2,9 +2,9 @@ use core::convert::TryInto;
 use core::ops::Range;
 use crate::scan::ScanOp;
 use crate::execute::{Instruction, OP_DONE, Actor, execute};
-use crate::script::{Script, script_next, Commands};
+use crate::script::{Script, script_next};
 use crate::token::Token;
-use crate::typing::{DataType, Register, int_to_register, float_to_register};
+use crate::typing::{DataType, Register, int_to_register, float_to_register, range_to_register};
 
 pub fn execute_event(compilation: &mut Compilation, event_name: &[u8]) -> Result<(), &'static str> {
     if let Some(location) = compilation.event_by_name(event_name) {
@@ -353,11 +353,20 @@ impl Compilation {
         Ok(id)
     }
 
+    pub fn write_constant_range(&mut self, start: u16, end_exclusive: u16)
+    -> Result<u8, &'static str> {
+        let reg = range_to_register(start, end_exclusive);
+        let id = self.write_constant(reg, DataType::Range)?;
+
+        debug_assert_eq!(self.get_data_type(id), DataType::Range);
+
+        Ok(id)
+    }
+
     pub fn write_constant_int(&mut self, value: i32) -> Result<u8, &'static str> {
         let id = self.write_constant(int_to_register(value), DataType::I32)?;
 
-        let data_type = self.get_data_type(id);
-        debug_assert_eq!(data_type, DataType::I32);
+        debug_assert_eq!(self.get_data_type(id), DataType::I32);
 
         Ok(id)
     }
@@ -365,8 +374,7 @@ impl Compilation {
     pub fn write_constant_float(&mut self, value: f32) -> Result<u8, &'static str> {
         let id = self.write_constant(float_to_register(value), DataType::F32)?;
 
-        let data_type = self.get_data_type(id);
-        debug_assert_eq!(data_type, DataType::F32);
+        debug_assert_eq!(self.get_data_type(id), DataType::F32);
 
         Ok(id)
     }
@@ -438,6 +446,8 @@ pub fn token_to_register_id(compilation: &mut Compilation, token: Token, constan
 }
 
 pub type Parser = fn (parameters: &str, registers: &mut Compilation) -> Result<(), &'static str>;
+pub type Parsers<'a> = &'a [Parser];
+pub type Commands<'a> = &'a [&'a str];
 
 pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
 -> Result<Compilation, &'static str> {
@@ -631,5 +641,17 @@ mod tests {
         assert_eq!(wr.write_bytes(b"cd12"), Ok((2, 6)));
         assert_eq!(wr.pick_constants(), b"abcd12");
     }
+
+    #[test]
+    fn constant_ranges() {
+        let mut wr = Compilation::default();
+        wr.write_constant_range(0, 0).unwrap();
+        assert_eq!(wr.pick_registers()[0], range_to_register(0, 0));
+
+        let mut wr = Compilation::default();
+        wr.write_constant_range(1, 5).unwrap();
+        assert_eq!(wr.pick_registers()[0], range_to_register(1, 5));
+    }
+
 
 }

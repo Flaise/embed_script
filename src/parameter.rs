@@ -197,10 +197,9 @@ pub fn parse_end_event(parameters: &str, compilation: &mut Compilation)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compile::{Parser, compile, execute_compilation, execute_event};
+    use crate::compile::{compile, execute_compilation, execute_event, Commands, Parsers};
     use crate::execute::OP_DONE;
     use crate::parameter::{parse_if, parse_end_if, parse_set};
-    use crate::script::Commands;
     use crate::typing::{float_to_register, int_to_register};
 
     const COMMANDS: Commands = &[
@@ -210,7 +209,7 @@ mod tests {
         "event",
         "end event",
     ];
-    const PARSERS: &[Parser] = &[
+    const PARSERS: Parsers = &[
         parse_if,
         parse_end_if,
         parse_set,

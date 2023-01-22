@@ -1,3 +1,4 @@
+use crate::compile::Commands;
 use crate::scan::{ScanOp, scan_line, ScanLine};
 
 pub struct Script<'a> {
@@ -9,8 +10,6 @@ impl<'a> Script<'a> {
         Script {source}
     }
 }
-
-pub type Commands<'a> = &'a [&'a str];
 
 pub fn script_next<'a, 'b>(script: &'a mut Script, commands: Commands<'b>)
 -> ScanOp<'a> {
