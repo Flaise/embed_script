@@ -1,8 +1,9 @@
 use std::fs::read_to_string;
+use std::io::{stdin, BufRead, stdout, Write};
 use std::process::exit;
 use std::str::from_utf8;
 use scripting::compile::{Commands, Parsers, Compilation};
-use scripting::execute::{Instruction, Actor, OP_OUTBOX_TAGGED, execute_at};
+use scripting::execute::{Instruction, Actor, OP_OUTBOX_TAGGED, execute_at, execute_event};
 use scripting::outbox::read_outbox;
 use scripting::parameter::{parse_if, parse_end_if, parse_set, parse_event, parse_end_event};
 use scripting::token::Tokenizer;
@@ -59,7 +60,6 @@ fn parse_print(tokenizer: &mut Tokenizer, compilation: &mut Compilation)
         compilation.write_bytes_and_register(message)?
     };
 
-    // compilation.write_instruction(Instruction {opcode: OP_OUTBOX_TAG, reg_a: CODE_PRINT, reg_b: 0, reg_c: 0})?;
     compilation.write_instruction(Instruction {opcode: OP_OUTBOX_TAGGED, reg_a: id, reg_b: TAG_PRINT, reg_c: 0})
 }
 
@@ -78,11 +78,8 @@ fn parse_option(tokenizer: &mut Tokenizer, compilation: &mut Compilation)
     compilation.write_instruction(Instruction {opcode: OP_OUTBOX_TAGGED, reg_a: text_id, reg_b: TAG_OPTION_TEXT, reg_c: 0})
 }
 
-/// The host environment has to provide its own implementation of "print" because needs vary. A
-/// console app like this may send the bytes to stdout, a game might direct the bytes into its own
-/// custom developer console, a regular desktop app might not have a print command or might send the
-/// bytes to stderr, and a very small computer might output the bytes via a serial cable.
-fn process_outbox<'a>(actor: &'a Actor) -> &'a [u8] {
+fn outbox_output(actor: &Actor) -> Vec<String> {
+    println!();
 
     let mut options = vec![];
     let mut options_printed = 0;
@@ -95,7 +92,7 @@ fn process_outbox<'a>(actor: &'a Actor) -> &'a [u8] {
                 println!("{}", String::from_utf8_lossy(message));
             }
             TAG_OPTION_EVENT => {
-                options.push(String::from_utf8_lossy(message));
+                options.push(String::from_utf8_lossy(message).into_owned());
             }
             TAG_OPTION_TEXT => {
                 options_printed += 1;
@@ -109,11 +106,47 @@ fn process_outbox<'a>(actor: &'a Actor) -> &'a [u8] {
     }
 
     if options_printed != options.len() {
-        println!("internal error: options list malformed");
-        exit(1);
+        panic!("internal error: options list malformed");
+    }
+    if options.len() > 9 {
+        panic!("script error: too many options, must be 1-9");
     }
 
-    b"exiting"
+    options
+}
+
+/// The host environment has to provide its own implementation of "print" because needs vary. A
+/// console app like this may send the bytes to stdout, a game might direct the bytes into its own
+/// custom developer console, a regular desktop app might not have a print command or might send the
+/// bytes to stderr, and a very small computer might output the bytes via a serial cable.
+fn process_outbox(actor: &Actor) -> Vec<u8> {
+    let options = outbox_output(actor);
+    if options.len() == 0 {
+        exit(0);
+    }
+
+    loop {
+        print!("\ninput selection > ");
+        stdout().flush().unwrap();
+
+        let read = stdin();
+        let line = read.lock().lines().next().unwrap().unwrap();
+
+        match line.parse::<usize>() {
+            Ok(num) => {
+                if num > 0 && num <= options.len() {
+                    let index = num - 1;
+                    return options[index].as_bytes().to_vec();
+                }
+                println!("Input is out of range.");
+            }
+            Err(_) => {
+                println!("Input is not a number.");
+            }
+        }
+
+        println!("Input a number from 1 to {}.", options.len());
+    }
 }
 
 fn main() {
@@ -128,9 +161,8 @@ fn main() {
     let mut actor = compilation.as_actor();
     execute_at(&mut actor, 0).unwrap();
 
-    let next = process_outbox(&actor);
-    let location = actor.event_by_name(next).unwrap();
-
-    execute_at(&mut actor, location).unwrap();
-    process_outbox(&actor);
+    loop {
+        let next = process_outbox(&actor);
+        execute_event(&mut actor, &next).unwrap();
+    }
 }

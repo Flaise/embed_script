@@ -6,7 +6,7 @@ use crate::execute::{Instruction, OP_DONE, Actor};
 use crate::token::{Token, Tokenizer, tokenize};
 use crate::typing::{DataType, Register, int_to_register, float_to_register, range_to_register};
 
-pub type Parser = fn (parameters: &mut Tokenizer, registers: &mut Compilation) -> Result<(), &'static str>;
+pub type Parser = fn(parameters: &mut Tokenizer, registers: &mut Compilation) -> Result<(), &'static str>;
 pub type Parsers<'a> = &'a [Parser];
 pub type Commands<'a> = &'a [&'a str];
 
