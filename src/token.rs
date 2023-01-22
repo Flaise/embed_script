@@ -105,15 +105,7 @@ impl<'a> Tokenizer<'a> {
         self.last_result
     }
 
-    fn peek_simple(&mut self) -> Token<'a> {
-        self.pick_simple(false)
-    }
-
     fn next_simple(&mut self) -> Token<'a> {
-        self.pick_simple(true)
-    }
-
-    fn pick_simple(&mut self, take: bool) -> Token<'a> {
         let mut last_index = 0;
         let mut found_tab = false;
         let mut state = TokenState::Initial;
@@ -173,10 +165,8 @@ impl<'a> Tokenizer<'a> {
                             found_tab = false;
                             self.in_command = true;
                         }
-                        if take {
-                            self.source = &self.source[last_index..];
-                            last_index = 0;
-                        }
+                        self.source = &self.source[last_index..];
+                        last_index = 0;
 
                         if is_ident_first_char(c) {
                             state = TokenState::Identifier;
@@ -209,7 +199,7 @@ impl<'a> Tokenizer<'a> {
                         true
                     };
                     if done {
-                        let seg = self.pick_segment(last_index, take);
+                        let seg = self.pick_segment(last_index);
                         match seg.parse::<i32>() {
                             Ok(val) => return Token::Integer(val),
                             Err(_) => return Token::Err(()),
@@ -235,7 +225,7 @@ impl<'a> Tokenizer<'a> {
                         true
                     };
                     if done {
-                        let seg = self.pick_segment(last_index, take);
+                        let seg = self.pick_segment(last_index);
                         if seg.as_bytes()[seg.len() - 1] == b'.' {
                             // No trailing dot allowed in floating point numbers.
                             return Token::Err(()); // TODO
@@ -263,7 +253,7 @@ impl<'a> Tokenizer<'a> {
                         true
                     };
                     if done {
-                        let seg = self.pick_segment(last_index, take);
+                        let seg = self.pick_segment(last_index);
 
                         if cfg!(debug_assertions) {
                             for c in seg.bytes() {
@@ -291,9 +281,9 @@ impl<'a> Tokenizer<'a> {
                         true
                     };
                     if done {
-                        let seg = self.pick_segment(last_index, take);
+                        let seg = self.pick_segment(last_index);
 
-                        if take && state == TokenState::Whitespace && c != Some(b'\t') {
+                        if state == TokenState::Whitespace && c != Some(b'\t') {
                             self.source = &self.source[1..];
                         }
 
@@ -305,11 +295,9 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn pick_segment(&mut self, index: usize, take: bool) -> &'a str {
+    fn pick_segment(&mut self, index: usize) -> &'a str {
         let result = from_utf8(&self.source[..index]).unwrap();
-        if take {
-            self.source = &self.source[index..];
-        }
+        self.source = &self.source[index..];
         result
     }
 }
@@ -684,20 +672,15 @@ mod tests {
     #[test]
     fn peek_one() {
         let mut tokenizer = tokenize("one");
-        assert_eq!(tokenizer.peek_simple(), Token::Identifier("one"));
         assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
-        assert_eq!(tokenizer.peek_simple(), Token::Done);
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn peek_two() {
         let mut tokenizer = tokenize("one two");
-        assert_eq!(tokenizer.peek_simple(), Token::Identifier("one"));
         assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
-        assert_eq!(tokenizer.peek_simple(), Token::Identifier("two"));
         assert_eq!(tokenizer.next_simple(), Token::Identifier("two"));
-        assert_eq!(tokenizer.peek_simple(), Token::Done);
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 

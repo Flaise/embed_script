@@ -32,6 +32,7 @@ pub enum ScanOp<'a> {
 }
 
 impl<'a> ScanOp<'a> {
+    #[cfg(test)]
     pub fn is_err(&self) -> bool {
         if let ScanOp::Err(_) = self {
             return true;
@@ -51,6 +52,7 @@ pub enum ScanLine<'a> {
 }
 
 impl<'a> ScanLine<'a> {
+    #[cfg(test)]
     pub fn is_err(&self) -> bool {
         if let ScanLine::Err(_) = self {
             return true;

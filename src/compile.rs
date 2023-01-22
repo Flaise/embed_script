@@ -254,10 +254,6 @@ impl Compilation {
         self.names.iter().take(self.next_name)
     }
 
-    fn valid_name_bytes(&self) -> impl Iterator<Item=&[u8]> {
-        self.valid_names().map(move |spec| spec.pick_bytes(&self.other_bytes))
-    }
-
     fn register_name(&self, id: u8) -> &[u8] {
         for name in self.valid_names() {
             if let Some(other) = name.register_id() {
@@ -541,13 +537,13 @@ mod tests {
     fn single_letter_names() {
         let mut wr = Compilation::default();
 
-        wr.write_name(b"a", 0);
+        wr.write_name(b"a", 0).unwrap();
         assert_eq!(wr.names[0], NameSpec {start: 0, end: 1, register_or_event: 0});
         assert_eq!(wr.names[0].register_id(), Some(0));
         assert_eq!(wr.register_name(0), b"a");
         assert_eq!(wr.register_by_name(b"a"), Some(0));
 
-        wr.write_name(b"b", 1);
+        wr.write_name(b"b", 1).unwrap();
         assert_eq!(wr.names[0], NameSpec {start: 0, end: 1, register_or_event: 0});
         assert_eq!(wr.names[1], NameSpec {start: 1, end: 2, register_or_event: 1});
         assert_eq!(wr.register_name(0), b"a");
@@ -562,8 +558,8 @@ mod tests {
     fn long_names() {
         let mut wr = Compilation::default();
 
-        wr.write_name(b"abc", 0);
-        wr.write_name(b"rqs", 1);
+        wr.write_name(b"abc", 0).unwrap();
+        wr.write_name(b"rqs", 1).unwrap();
         assert_eq!(wr.register_name(0), b"abc");
         assert_eq!(wr.register_name(1), b"rqs");
         assert_eq!(wr.register_by_name(b"abc"), Some(0));
@@ -576,8 +572,8 @@ mod tests {
     fn skip_register() {
         let mut wr = Compilation::default();
 
-        wr.write_name(b"abc", 0);
-        wr.write_name(b"rqs", 2);
+        wr.write_name(b"abc", 0).unwrap();
+        wr.write_name(b"rqs", 2).unwrap();
         assert_eq!(wr.register_name(0), b"abc");
         assert_eq!(wr.register_name(2), b"rqs");
         assert_eq!(wr.register_by_name(b"abc"), Some(0));

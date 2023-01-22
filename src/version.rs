@@ -1,6 +1,9 @@
+#[cfg(test)]
 use crate::scan::{OpLine, ScanOp, ScriptError};
+#[cfg(test)]
 use crate::script::{Script, script_next};
 
+#[cfg(test)]
 pub fn pick_version<'a>(script: &'a mut Script) -> Result<&'a str, &'static str> {
     match script_next(script, &["version"]) {
         ScanOp::Done => Err("version not found"),
