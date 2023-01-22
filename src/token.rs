@@ -22,7 +22,7 @@ impl<'a> Token<'a> {
 
 fn is_symbol_char(ch: u8) -> bool {
     match ch {
-        b'!' | b'=' | b'<' | b'>' | b'(' | b')' | b'+' | b'-' | b'/' | b':' | b'*' => true,
+        b'!' | b'=' | b'<' | b'>' | b'(' | b')' | b'+' | b'-' | b'/' | b':' | b'*' | b'#' => true,
         _ => false,
     }
 }

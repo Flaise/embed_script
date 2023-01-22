@@ -146,6 +146,11 @@ pub fn scan_line<'a>(mut program: &'a str, commands: &[&str]) -> ScanLine<'a> {
                     program = remainder;
                     continue;
                 }
+                if line.as_bytes()[0] == b'#' {
+                    // using # as comment character
+                    program = remainder;
+                    continue;
+                }
                 return pick_command(line, remainder, commands);
             }
             Progress::Err(error) => {
@@ -328,6 +333,60 @@ mod tests {
     #[test]
     fn trailing_tab_ok() {
         assert_eq!(scan_line("end if\t", COMMANDS), ScanLine::Op {
+            opline: OpLine {
+                command_index: 2,
+                parameters: "",
+            },
+            remainder: "",
+        });
+    }
+
+    #[test]
+    fn comment_character() {
+        assert_eq!(scan_line("#", COMMANDS), ScanLine::Done);
+    }
+
+    #[test]
+    fn comment_with_space() {
+        assert_eq!(scan_line("# comment", COMMANDS), ScanLine::Done);
+    }
+
+    #[test]
+    fn comment_without_space() {
+        assert_eq!(scan_line("#comment", COMMANDS), ScanLine::Done);
+    }
+
+    #[test]
+    fn double_comment_character() {
+        assert_eq!(scan_line("##", COMMANDS), ScanLine::Done);
+        assert_eq!(scan_line("##comment", COMMANDS), ScanLine::Done);
+        assert_eq!(scan_line("## comment", COMMANDS), ScanLine::Done);
+    }
+
+    #[test]
+    fn skip_comment() {
+        assert_eq!(scan_line("#\nend if", COMMANDS), ScanLine::Op {
+            opline: OpLine {
+                command_index: 2,
+                parameters: "",
+            },
+            remainder: "",
+        });
+        assert_eq!(scan_line("# comment\nend if", COMMANDS), ScanLine::Op {
+            opline: OpLine {
+                command_index: 2,
+                parameters: "",
+            },
+            remainder: "",
+        });
+        assert_eq!(scan_line("##\nend if", COMMANDS), ScanLine::Op {
+            opline: OpLine {
+                command_index: 2,
+                parameters: "",
+            },
+            remainder: "",
+        });
+        assert_eq!(scan_line("##comment\nend if", COMMANDS), ScanLine::Op {
             opline: OpLine {
                 command_index: 2,
                 parameters: "",
