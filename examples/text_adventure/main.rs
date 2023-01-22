@@ -1,4 +1,5 @@
 use std::fs::read_to_string;
+use std::io::Result as IOResult;
 use scripting::compile::{execute_compilation, Commands, Parsers, Compilation, execute_event};
 use scripting::execute::{OP_OUTBOX_WRITE, Instruction};
 use scripting::outbox::read_outbox;
@@ -48,10 +49,25 @@ fn print_outbox(compilation: &mut Compilation) {
     }
 }
 
-fn main() {
+const FILE_NAME: &str = "adventure.script";
 
+fn read_file() -> IOResult<String> {
     // TODO: let bytes = read("./adventure.script").unwrap();
-    let bytes = read_to_string("./examples/text_adventure/adventure.script").unwrap();
+
+    if let Ok(bytes) = read_to_string(format!("./{}", FILE_NAME)) {
+        return Ok(bytes);
+    }
+    read_to_string(format!("./examples/text_adventure/{}", FILE_NAME))
+}
+
+fn main() {
+    let bytes = match read_file() {
+        Ok(b) => b,
+        Err(error) => {
+            eprintln!("Unable to read file \"{}\": {}", FILE_NAME, error.to_string());
+            return;
+        }
+    };
 
     let mut compilation = compile_with_version(&bytes, COMMANDS, PARSERS).unwrap();
 
