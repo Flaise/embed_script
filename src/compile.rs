@@ -176,7 +176,40 @@ impl Compilation {
         None
     }
 
-    fn write_name(&mut self, value: &[u8], register_or_event: u16) {
+    pub fn write_bytes(&mut self, value: &[u8]) -> Result<(u16, u16), &'static str> {
+        let mut start = self.next_byte;
+
+        if let Some(pos) = find_subsequence(self.pick_constants(), value) {
+            start = pos;
+        } else {
+            let consts = self.pick_constants();
+
+            let check_start = consts.len().saturating_sub(value.len());
+            let check_end = consts.len();
+            for i in check_start..check_end {
+                let check = &consts[i..check_end];
+                if value.starts_with(check) {
+                    start = i;
+                    break;
+                }
+            }
+        }
+
+        let len = value.len();
+        let end = start + len;
+        if start > u16::MAX as usize || end > u16::MAX as usize {
+            return Err("too many constant bytes to index into");
+        }
+        if end > self.other_bytes.len() {
+            return Err("not enough room for constant bytes");
+        }
+        self.other_bytes[start..end].copy_from_slice(value);
+        self.next_byte = end;
+
+        Ok((start as u16, end as u16))
+    }
+
+    fn write_name(&mut self, value: &[u8], register_or_event: u16) -> Result<(), &'static str> {
         debug_assert!(value.len() <= 50);
 
         for i in 0..self.next_name {
@@ -189,22 +222,20 @@ impl Compilation {
                     register_or_event,
                 };
 
-                return;
+                return Ok(());
             }
         }
 
-        let len = value.len();
-        let start = self.next_byte;
-        let end = self.next_byte + len;
-        self.other_bytes[start..end].copy_from_slice(value);
-        self.next_byte += len;
+        let (start, end) = self.write_bytes(value)?;
 
         self.names[self.next_name] = NameSpec {
-            start: start as u16,
-            end: end as u16,
+            start,
+            end,
             register_or_event,
         };
         self.next_name += 1;
+
+        Ok(())
     }
 
     pub fn is_event(&self, offset: u16) -> bool {
@@ -301,7 +332,7 @@ impl Compilation {
         let meta = &mut self.metadata[id as usize];
         meta.data_type = data_type;
 
-        self.write_name(name_bytes, id as u16);
+        self.write_name(name_bytes, id as u16)?;
 
         debug_assert_eq!(self.get_data_type(id), data_type);
         Ok(id)
@@ -345,7 +376,7 @@ impl Compilation {
     }
 
     pub fn write_event(&mut self, name: &[u8], offset: u16) -> Result<(), &'static str> {
-        if offset & EVENT_BIT_16 != 0 {
+        if offset > MAX_EVENT {
             return Err("event offset too high");
         }
         let id = offset | EVENT_BIT_16;
@@ -356,8 +387,7 @@ impl Compilation {
             }
         }
 
-        self.write_name(name, id);
-        Ok(())
+        self.write_name(name, id)
     }
 
     pub fn write_instruction(&mut self, instruction: Instruction) -> Result<(), &'static str> {
@@ -368,6 +398,11 @@ impl Compilation {
         self.next_instruction += 1;
         Ok(())
     }
+}
+
+// from https://stackoverflow.com/a/35907071
+fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|window| window == needle)
 }
 
 pub fn token_to_register_id(compilation: &mut Compilation, token: Token, constant_allowed: bool)
@@ -572,6 +607,33 @@ mod tests {
         let mut wr = Compilation::default();
         wr.write_variable("asdf", DataType::Unknown).unwrap();
         wr.write_event(b"asdf", 0).unwrap_err();
+    }
+
+    #[test]
+    fn string_writing() {
+        let mut wr = Compilation::default();
+        assert_eq!(wr.write_bytes(b"abcd"), Ok((0, 4)));
+        assert_eq!(wr.pick_constants(), b"abcd");
+        assert_eq!(wr.write_bytes(b"1234"), Ok((4, 8)));
+        assert_eq!(wr.pick_constants(), b"abcd1234");
+    }
+
+    #[test]
+    fn string_duplication() {
+        let mut wr = Compilation::default();
+        assert_eq!(wr.write_bytes(b"abcd"), Ok((0, 4)));
+        assert_eq!(wr.pick_constants(), b"abcd");
+        assert_eq!(wr.write_bytes(b"abcd"), Ok((0, 4)));
+        assert_eq!(wr.pick_constants(), b"abcd");
+    }
+
+    #[test]
+    fn string_overlap() {
+        let mut wr = Compilation::default();
+        assert_eq!(wr.write_bytes(b"abcd"), Ok((0, 4)));
+        assert_eq!(wr.pick_constants(), b"abcd");
+        assert_eq!(wr.write_bytes(b"cd12"), Ok((2, 6)));
+        assert_eq!(wr.pick_constants(), b"abcd12");
     }
 
 }
