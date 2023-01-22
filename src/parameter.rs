@@ -20,12 +20,7 @@ fn match_register_types(compilation: &mut Compilation, ids: &[u8]) -> Result<(),
 
 pub fn parse_set(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
     let dest = token_to_register_id(compilation, tok.next(), false)?;
-
-    match tok.next() {
-        Token::Symbol(":") => {}
-        _ => return Err("set command syntax is    set variable: expression    (missing :)"),
-    }
-
+    tok.expect_one_symbol(b":")?;
     let b = token_to_register_id(compilation, tok.next(), true)?;
 
     let op = match tok.next() {
@@ -62,13 +57,9 @@ pub fn parse_set(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(
     };
 
     let c = token_to_register_id(compilation, tok.next(), true)?;
+    tok.expect_end_of_input()?;
+
     match_register_types(compilation, &[dest, b, c])?;
-
-    match tok.next() {
-        Token::Done => {}
-        _ => return Err("currently the set command only takes 1 or 2 terms separated by an operator, i.e. A + 1"),
-    }
-
     compilation.write_instruction(Instruction {opcode: op, reg_a: dest, reg_b: b, reg_c: c})
 }
 
@@ -107,11 +98,10 @@ pub fn parse_if(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<()
     let c = token_to_register_id(compilation, tok.next(), true)?;
     tok.expect_end_of_input()?;
 
-    match_register_types(compilation, &[b, c])?;
-
     // let data_type = registers.get_data_type(b);
     // TODO: pick correct opcode type
 
+    match_register_types(compilation, &[b, c])?;
     compilation.write_instruction(Instruction {opcode: op, reg_a: 0, reg_b: b, reg_c: c})
 }
 

@@ -57,6 +57,12 @@ mod tests {
     }
 
     #[test]
+    fn version_with_comments() {
+        let script = &mut Script::new("# such comment\n#wow\nversion 5");
+        assert_eq!(pick_version(script), Ok("5"));
+    }
+
+    #[test]
     fn version_absent() {
         let script = &mut Script::new("ver sion 5");
         pick_version(script).unwrap_err();

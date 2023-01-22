@@ -180,6 +180,11 @@ impl Compilation {
         None
     }
 
+    pub fn write_bytes_and_register(&mut self, value: &[u8]) -> Result<u8, &'static str> {
+        let range = self.write_bytes(value)?;
+        self.write_constant_range(range)
+    }
+
     pub fn write_bytes(&mut self, value: &[u8]) -> Result<Range<u16>, &'static str> {
         if value.len() == 0 {
             return Ok(0..0);
@@ -503,6 +508,8 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
 
 #[cfg(test)]
 mod tests {
+    use crate::typing::register_to_range;
+
     use super::*;
 
     const COMMANDS: Commands = &[
@@ -677,6 +684,18 @@ mod tests {
         let mut wr = Compilation::default();
         wr.write_constant_range(1..5).unwrap();
         assert_eq!(wr.pick_registers()[0], range_to_register(1..5));
+    }
+
+    #[test]
+    fn string_and_range() {
+        let mut wr = Compilation::default();
+        let id = wr.write_bytes_and_register(b"uiop").unwrap();
+
+        assert_eq!(id, 0);
+        assert_eq!(wr.pick_registers()[id as usize], range_to_register(0..4));
+
+        let range = register_to_range(wr.pick_registers()[id as usize]);
+        assert_eq!(&wr.pick_constants()[range], &b"uiop"[..]);
     }
 
 }

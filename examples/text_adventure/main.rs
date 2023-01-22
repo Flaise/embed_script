@@ -1,7 +1,7 @@
 use std::fs::read_to_string;
 use std::process::exit;
 use scripting::compile::{execute_compilation, Commands, Parsers, Compilation, execute_event};
-use scripting::execute::{OP_OUTBOX_WRITE, Instruction};
+use scripting::execute::{OP_OUTBOX_WRITE, Instruction, Actor};
 use scripting::outbox::read_outbox;
 use scripting::parameter::{parse_if, parse_end_if, parse_set, parse_event, parse_end_event};
 use scripting::token::Tokenizer;
@@ -31,13 +31,12 @@ fn parse_print(tokenizer: &mut Tokenizer, compilation: &mut Compilation)
 -> Result<(), &'static str> {
     let message = tokenizer.remainder();
 
-    let range = if message.len() == 0 {
-        compilation.write_bytes(b" ")?
+    let id = if message.len() == 0 {
+        compilation.write_bytes_and_register(b" ")?
     } else {
-        compilation.write_bytes(message)?
+        compilation.write_bytes_and_register(message)?
     };
 
-    let id = compilation.write_constant_range(range)?;
     compilation.write_instruction(Instruction {opcode: OP_OUTBOX_WRITE, reg_a: id, reg_b: 0, reg_c: 0})
 }
 
@@ -45,18 +44,26 @@ fn parse_print(tokenizer: &mut Tokenizer, compilation: &mut Compilation)
 /// console app like this may send the bytes to stdout, a game might direct the bytes into its own
 /// custom developer console, a regular desktop app might not have a print command or might send the
 /// bytes to stderr, and a very small computer might output the bytes via a serial cable.
-fn print_outbox(compilation: &mut Compilation) {
-    let actor = compilation.as_actor();
-
+fn print_outbox(actor: &Actor) {
     for message in read_outbox(&actor) {
         println!("{}", String::from_utf8_lossy(message));
     }
 }
 
-fn parse_option(_tokenizer: &mut Tokenizer, _compilation: &mut Compilation)
+fn parse_option(tokenizer: &mut Tokenizer, compilation: &mut Compilation)
 -> Result<(), &'static str> {
+    let event_name = tokenizer.expect_identifier()?;
+    tokenizer.expect_one_symbol(b":")?;
+    let text = tokenizer.remainder(); // TODO: error if remainder is empty
 
-    todo!();
+    let name_id = compilation.write_bytes_and_register(event_name)?;
+    let text_id = compilation.write_bytes_and_register(text)?;
+
+    Ok(())
+    // TODO:
+
+    // compilation.write_instruction(Instruction {opcode: OP_OUTBOX_WRITE, reg_a: name_id, reg_b: 0, reg_c: 0})?;
+    // compilation.write_instruction(Instruction {opcode: OP_OUTBOX_WRITE, reg_a: text_id, reg_b: 0, reg_c: 0})
 }
 
 const FILE_NAME: &str = "adventure.script";
@@ -86,8 +93,8 @@ fn main() {
     // println!("---");
 
     execute_compilation(&mut compilation).unwrap();
-    print_outbox(&mut compilation);
+    print_outbox(&compilation.as_actor());
 
     execute_event(&mut compilation, b"exiting").unwrap();
-    print_outbox(&mut compilation);
+    print_outbox(&compilation.as_actor());
 }

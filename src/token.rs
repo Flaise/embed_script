@@ -99,6 +99,23 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
+    pub fn expect_symbol(&mut self) -> Result<&'a [u8], &'static str> {
+        match self.next() {
+            Token::Symbol(sym) => Ok(sym.as_bytes()),
+            _ => {
+                Err("expected symbol")
+            }
+        }
+    }
+
+    pub fn expect_one_symbol(&mut self, check: &[u8]) -> Result<(), &'static str> {
+        let sym = self.expect_symbol()?;
+        if sym != check {
+            return Err("wrong symbol");
+        }
+        Ok(())
+    }
+
     pub fn remainder(&self) -> &[u8] {
         self.source
     }
