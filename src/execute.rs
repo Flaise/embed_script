@@ -145,6 +145,7 @@ pub fn execute(actor: &mut Actor, location: u16) -> Result<(), &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compile::Compilation;
     use crate::outbox::read_outbox;
     use crate::typing::{int_to_register, range_to_register};
 
@@ -347,6 +348,31 @@ mod tests {
         let mut r = read_outbox(&actor);
         assert_eq!(r.next(), Some(&b"1234"[..]));
         assert_eq!(r.next(), Some(&b"abc"[..]));
+        assert_eq!(r.next(), None);
+    }
+
+    #[test]
+    fn write_three_ranges() {
+        let mut comp = Compilation::default();
+        let (a, b) = comp.write_bytes(b"1234").unwrap();
+        let (c, d) = comp.write_bytes(b"q").unwrap();
+        let (e, f) = comp.write_bytes(b"The quick, brown fox jumped over the lazy dog.").unwrap();
+
+        let id_a = comp.write_constant_range(a, b).unwrap();
+        let id_b = comp.write_constant_range(c, d).unwrap();
+        let id_c = comp.write_constant_range(e, f).unwrap();
+
+        comp.write_instruction(Instruction {opcode: OP_OUTBOX_WRITE, reg_a: id_a, reg_b: 0, reg_c: 0}).unwrap();
+        comp.write_instruction(Instruction {opcode: OP_OUTBOX_WRITE, reg_a: id_b, reg_b: 0, reg_c: 0}).unwrap();
+        comp.write_instruction(Instruction {opcode: OP_OUTBOX_WRITE, reg_a: id_c, reg_b: 0, reg_c: 0}).unwrap();
+
+        let mut actor = comp.as_actor();
+        execute(&mut actor, 0).unwrap();
+
+        let mut r = read_outbox(&actor);
+        assert_eq!(r.next(), Some(&b"1234"[..]));
+        assert_eq!(r.next(), Some(&b"q"[..]));
+        assert_eq!(r.next(), Some(&b"The quick, brown fox jumped over the lazy dog."[..]));
         assert_eq!(r.next(), None);
     }
 

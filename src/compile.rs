@@ -177,6 +177,10 @@ impl Compilation {
     }
 
     pub fn write_bytes(&mut self, value: &[u8]) -> Result<(u16, u16), &'static str> {
+        if value.len() == 0 {
+            return Ok((0, 0));
+        }
+
         let mut start = self.next_byte;
 
         if let Some(pos) = find_subsequence(self.pick_constants(), value) {
@@ -640,6 +644,12 @@ mod tests {
         assert_eq!(wr.pick_constants(), b"abcd");
         assert_eq!(wr.write_bytes(b"cd12"), Ok((2, 6)));
         assert_eq!(wr.pick_constants(), b"abcd12");
+    }
+
+    #[test]
+    fn empty_string() {
+        let mut wr = Compilation::default();
+        assert_eq!(wr.write_bytes(b""), Ok((0, 0)));
     }
 
     #[test]
