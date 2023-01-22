@@ -7,3 +7,7 @@ print === ADVENTURE GAME ===
 event starting
     print Apparently it's up to you to save the world.
 end event
+
+event exiting
+    print The end!
+end event

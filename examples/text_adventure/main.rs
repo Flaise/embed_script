@@ -1,6 +1,7 @@
 use std::fs::read_to_string;
-use scripting::compile::{execute_compilation, Commands, Parsers, Compilation};
+use scripting::compile::{execute_compilation, Commands, Parsers, Compilation, execute_event};
 use scripting::execute::{OP_OUTBOX_WRITE, Instruction};
+use scripting::outbox::read_outbox;
 use scripting::parameter::{parse_if, parse_end_if, parse_set, parse_event, parse_end_event};
 use scripting::version::compile_with_version;
 
@@ -12,6 +13,7 @@ const COMMANDS: Commands = &[
     "end event",
     "print",
 ];
+
 const PARSERS: Parsers = &[
     parse_if,
     parse_end_if,
@@ -30,6 +32,14 @@ pub fn parse_print(parameters: &str, compilation: &mut Compilation)
     compilation.write_instruction(Instruction {opcode: OP_OUTBOX_WRITE, reg_a: id, reg_b: 0, reg_c: 0})
 }
 
+fn print_outbox(compilation: &mut Compilation) {
+    let actor = compilation.as_actor();
+
+    for message in read_outbox(&actor) {
+        println!("{}", String::from_utf8_lossy(message));
+    }
+}
+
 fn main() {
 
     // TODO: let bytes = read("./adventure.script").unwrap();
@@ -38,6 +48,8 @@ fn main() {
     let mut compilation = compile_with_version(&bytes, COMMANDS, PARSERS).unwrap();
 
     execute_compilation(&mut compilation).unwrap();
+    print_outbox(&mut compilation);
 
-    println!("{}", String::from_utf8_lossy(compilation.pick_outbox()));
+    execute_event(&mut compilation, b"exiting").unwrap();
+    print_outbox(&mut compilation);
 }
