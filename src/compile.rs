@@ -176,9 +176,9 @@ impl Compilation {
         None
     }
 
-    pub fn write_bytes(&mut self, value: &[u8]) -> Result<(u16, u16), &'static str> {
+    pub fn write_bytes(&mut self, value: &[u8]) -> Result<Range<u16>, &'static str> {
         if value.len() == 0 {
-            return Ok((0, 0));
+            return Ok(0..0);
         }
 
         let mut start = self.next_byte;
@@ -210,7 +210,7 @@ impl Compilation {
         self.other_bytes[start..end].copy_from_slice(value);
         self.next_byte = end;
 
-        Ok((start as u16, end as u16))
+        Ok(start as u16..end as u16)
     }
 
     fn write_name(&mut self, value: &[u8], register_or_event: u16) -> Result<(), &'static str> {
@@ -230,7 +230,9 @@ impl Compilation {
             }
         }
 
-        let (start, end) = self.write_bytes(value)?;
+        let range = self.write_bytes(value)?;
+        let start = range.start;
+        let end = range.end;
 
         self.names[self.next_name] = NameSpec {
             start,
@@ -357,9 +359,9 @@ impl Compilation {
         Ok(id)
     }
 
-    pub fn write_constant_range(&mut self, start: u16, end_exclusive: u16)
+    pub fn write_constant_range(&mut self, range: Range<u16>)
     -> Result<u8, &'static str> {
-        let reg = range_to_register(start, end_exclusive);
+        let reg = range_to_register(range);
         let id = self.write_constant(reg, DataType::Range)?;
 
         debug_assert_eq!(self.get_data_type(id), DataType::Range);
@@ -622,45 +624,45 @@ mod tests {
     #[test]
     fn string_writing() {
         let mut wr = Compilation::default();
-        assert_eq!(wr.write_bytes(b"abcd"), Ok((0, 4)));
+        assert_eq!(wr.write_bytes(b"abcd"), Ok(0..4));
         assert_eq!(wr.pick_constants(), b"abcd");
-        assert_eq!(wr.write_bytes(b"1234"), Ok((4, 8)));
+        assert_eq!(wr.write_bytes(b"1234"), Ok(4..8));
         assert_eq!(wr.pick_constants(), b"abcd1234");
     }
 
     #[test]
     fn string_duplication() {
         let mut wr = Compilation::default();
-        assert_eq!(wr.write_bytes(b"abcd"), Ok((0, 4)));
+        assert_eq!(wr.write_bytes(b"abcd"), Ok(0..4));
         assert_eq!(wr.pick_constants(), b"abcd");
-        assert_eq!(wr.write_bytes(b"abcd"), Ok((0, 4)));
+        assert_eq!(wr.write_bytes(b"abcd"), Ok(0..4));
         assert_eq!(wr.pick_constants(), b"abcd");
     }
 
     #[test]
     fn string_overlap() {
         let mut wr = Compilation::default();
-        assert_eq!(wr.write_bytes(b"abcd"), Ok((0, 4)));
+        assert_eq!(wr.write_bytes(b"abcd"), Ok(0..4));
         assert_eq!(wr.pick_constants(), b"abcd");
-        assert_eq!(wr.write_bytes(b"cd12"), Ok((2, 6)));
+        assert_eq!(wr.write_bytes(b"cd12"), Ok(2..6));
         assert_eq!(wr.pick_constants(), b"abcd12");
     }
 
     #[test]
     fn empty_string() {
         let mut wr = Compilation::default();
-        assert_eq!(wr.write_bytes(b""), Ok((0, 0)));
+        assert_eq!(wr.write_bytes(b""), Ok(0..0));
     }
 
     #[test]
     fn constant_ranges() {
         let mut wr = Compilation::default();
-        wr.write_constant_range(0, 0).unwrap();
-        assert_eq!(wr.pick_registers()[0], range_to_register(0, 0));
+        wr.write_constant_range(0..0).unwrap();
+        assert_eq!(wr.pick_registers()[0], range_to_register(0..0));
 
         let mut wr = Compilation::default();
-        wr.write_constant_range(1, 5).unwrap();
-        assert_eq!(wr.pick_registers()[0], range_to_register(1, 5));
+        wr.write_constant_range(1..5).unwrap();
+        assert_eq!(wr.pick_registers()[0], range_to_register(1..5));
     }
 
 }

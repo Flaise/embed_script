@@ -29,9 +29,9 @@ pub fn float_to_register(val: f32) -> Register {
     unsafe { transmute(val) }
 }
 
-pub fn range_to_register(start: u16, end_exclusive: u16) -> Register {
-    let [a, b] = start.to_be_bytes();
-    let [c, d] = end_exclusive.to_be_bytes();
+pub fn range_to_register(range: Range<u16>) -> Register {
+    let [a, b] = range.start.to_be_bytes();
+    let [c, d] = range.end.to_be_bytes();
     u32::from_be_bytes([a, b, c, d])
 }
 
@@ -68,8 +68,8 @@ mod tests {
 
     #[test]
     fn ranges() {
-        assert_eq!(register_to_range(range_to_register(0, 1)), 0..1);
-        assert_eq!(register_to_range(range_to_register(0, 2)), 0..2);
-        assert_eq!(register_to_range(range_to_register(5, 19)), 5..19);
+        assert_eq!(register_to_range(range_to_register(0..1)), 0..1);
+        assert_eq!(register_to_range(range_to_register(0..2)), 0..2);
+        assert_eq!(register_to_range(range_to_register(5..19)), 5..19);
     }
 }

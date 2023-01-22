@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn write_one_range() {
         let mut actor = Actor {
-            registers: &mut [range_to_register(0, 4)],
+            registers: &mut [range_to_register(0..4)],
             instructions: &[
                 Instruction {opcode: OP_OUTBOX_WRITE, reg_a: 0, reg_b: 0, reg_c: 0},
             ],
@@ -333,8 +333,8 @@ mod tests {
     fn write_two_ranges() {
         let mut actor = Actor {
             registers: &mut [
-                range_to_register(0, 4),
-                range_to_register(4, 7),
+                range_to_register(0..4),
+                range_to_register(4..7),
             ],
             instructions: &[
                 Instruction {opcode: OP_OUTBOX_WRITE, reg_a: 0, reg_b: 0, reg_c: 0},
@@ -354,13 +354,13 @@ mod tests {
     #[test]
     fn write_three_ranges() {
         let mut comp = Compilation::default();
-        let (a, b) = comp.write_bytes(b"1234").unwrap();
-        let (c, d) = comp.write_bytes(b"q").unwrap();
-        let (e, f) = comp.write_bytes(b"The quick, brown fox jumped over the lazy dog.").unwrap();
+        let ra = comp.write_bytes(b"1234").unwrap();
+        let rb = comp.write_bytes(b"q").unwrap();
+        let rc = comp.write_bytes(b"The quick, brown fox jumped over the lazy dog.").unwrap();
 
-        let id_a = comp.write_constant_range(a, b).unwrap();
-        let id_b = comp.write_constant_range(c, d).unwrap();
-        let id_c = comp.write_constant_range(e, f).unwrap();
+        let id_a = comp.write_constant_range(ra).unwrap();
+        let id_b = comp.write_constant_range(rb).unwrap();
+        let id_c = comp.write_constant_range(rc).unwrap();
 
         comp.write_instruction(Instruction {opcode: OP_OUTBOX_WRITE, reg_a: id_a, reg_b: 0, reg_c: 0}).unwrap();
         comp.write_instruction(Instruction {opcode: OP_OUTBOX_WRITE, reg_a: id_b, reg_b: 0, reg_c: 0}).unwrap();
@@ -380,8 +380,8 @@ mod tests {
     fn smaller_outbox() {
         let mut actor = Actor {
             registers: &mut [
-                range_to_register(0, 4),
-                range_to_register(4, 7),
+                range_to_register(0..4),
+                range_to_register(4..7),
             ],
             instructions: &[
                 Instruction {opcode: OP_OUTBOX_WRITE, reg_a: 0, reg_b: 0, reg_c: 0},
