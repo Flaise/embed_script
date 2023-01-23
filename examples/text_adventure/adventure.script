@@ -1,54 +1,54 @@
-version 1
+VERSION 1
 
-print     ========================
-print     ==== ADVENTURE GAME ====
-print     ========================
-print
-print     A simple text-based adventure game made with a new scripting language.
-print
-print Apparently it's up to you to save the world.
-print You are standing outside in the middle of a small town. The buildings are made mostly of wood and they're old but in decent repair. To the north is the clock tower, tall and imposing but difficult to read at this hour. It's about 6:00 in the morning. To the east, a bit of a walk from here, is the workshop that the local mage lives and works at.
+PRINT     ========================
+PRINT     ==== ADVENTURE GAME ====
+PRINT     ========================
+PRINT
+PRINT     A simple text-based adventure game made with a new scripting language.
+PRINT
+PRINT Apparently it's up to you to save the world.
+PRINT You are standing outside in the middle of a small town. The buildings are made mostly of wood and they're old but in decent repair. To the north is the clock tower, tall and imposing but difficult to read at this hour. It's about 6:00 in the morning. To the east, a bit of a walk from here, is the workshop that the local mage lives and works at.
 
-option clock_tower: north - The Clock Tower
-option workshop   : east  - The Mage's Workshop
+OPTION clock_tower: north - The Clock Tower
+OPTION workshop   : east  - The Mage's Workshop
 
-event town_square
-    print Back in the middle of town.
+EVENT town_square
+    PRINT Back in the middle of town.
 
-    option clock_tower: north - The Clock Tower
-    option workshop   : east  - The Mage's Workshop
-end event
+    OPTION clock_tower: north - The Clock Tower
+    OPTION workshop   : east  - The Mage's Workshop
+END EVENT
 
-event workshop
-    print You're in front of the mage's workshop. You can't recall seeing him away from his workshop, but you've visited a few times over the years to buy trinkets and have small items repaired. Maybe it would be worthwhile to talk to him about saving the world.
+EVENT workshop
+    PRINT You're in front of the mage's workshop. You can't recall seeing him away from his workshop, but you've visited a few times over the years to buy trinkets and have small items repaired. Maybe it would be worthwhile to talk to him about saving the world.
 
-    option workshop_door: Knock on the door
-    option town_square  : Leave
-end event
+    OPTION workshop_door: Knock on the door
+    OPTION town_square  : Leave
+END EVENT
 
-event workshop_door
-    #if visited_door = 1
-    #    print Unfortunately, that's still not implemented yet. Sorry.
-    #end if
-    #if visited_door = 0
-        print Unfortunately, that's not implemented yet.
-        set visited_door: 1
-    #end if
+EVENT workshop_door
+    #IF visited_door = 1
+    #    PRINT Unfortunately, that's still not implemented yet. Sorry.
+    #END IF
+    #IF visited_door = 0
+        PRINT Unfortunately, that's not implemented yet.
+        SET visited_door: 1
+    #END IF
 
-    option workshop: Never mind
-end event
+    OPTION workshop: Never mind
+END EVENT
 
-event clock_tower
-    print You can hear the ticking of the gears from here.
+EVENT clock_tower
+    PRINT You can hear the ticking of the gears from here.
 
-    if visited_clock = 1
-        print If only you could turn back time...
-    end if
-    set visited_clock: 1
+    IF visited_clock = 1
+        PRINT If only you could turn back time...
+    END IF
+    SET visited_clock: 1
 
-    option town_square: Leave
-end event
+    OPTION town_square: Leave
+END EVENT
 
-event exiting
-    print Never mind. The world can save itself.
-end event
+EVENT exiting
+    PRINT Never mind. The world can save itself.
+END EVENT
