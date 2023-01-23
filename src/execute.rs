@@ -1,39 +1,7 @@
 use crate::compile::{NameSpec, event_by_name};
+use crate::instruction::{Instruction, OP_MOVE, OP_INT_ADD, OP_INT_SUB, OP_INT_MUL, OP_INT_DIV, OP_INT_EQ, OP_DONE, OP_OUTBOX_WRITE, OP_JUMP, OP_INT_LE, OP_INT_LT, OP_INT_NE, OP_OUTBOX_TAGGED};
 use crate::outbox::{write_outbox_message, write_outbox_message_tagged};
 use crate::typing::{Register, int_to_register, register_to_int, register_to_range};
-
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct Instruction {
-    pub opcode: u8,
-    pub reg_a: u8,
-    pub reg_b: u8,
-    pub reg_c: u8,
-}
-
-/// no parameters
-pub const OP_DONE: u8 = 1;
-/// R(A) <- R(B)
-pub const OP_MOVE: u8 = 2;
-/// if R(B) == R(C) then pc += A
-pub const OP_INT_EQ: u8 = 3;
-/// if R(B) <= R(C) then pc += A
-pub const OP_INT_LE: u8 = 4;
-/// if R(B) < R(C) then pc += A
-pub const OP_INT_LT: u8 = 5;
-/// if R(B) != R(C) then pc += A
-pub const OP_INT_NE: u8 = 6;
-/// R(A) <- R(B) + R(C)
-pub const OP_INT_ADD: u8 = 7;
-/// R(A) <- R(B) - R(C)
-pub const OP_INT_SUB: u8 = 8;
-/// R(A) <- R(B) * R(C)
-pub const OP_INT_MUL: u8 = 9;
-/// R(A) <- R(B) / R(C)
-pub const OP_INT_DIV: u8 = 10;
-/// outbox[...] <- constants[range(R(A))]
-pub const OP_OUTBOX_WRITE: u8 = 11;
-/// outbox[...] <- B, constants[range(R(A))]
-pub const OP_OUTBOX_TAGGED: u8 = 12;
 
 fn validate_branch(inst_len: usize, counter: usize, reg_a: u8) -> Result<(), &'static str> {
     debug_assert!(inst_len > counter);
@@ -165,6 +133,12 @@ pub fn execute_at(actor: &mut Actor, location: u16) -> Result<(), &'static str> 
                 write_outbox_message_tagged(&mut actor.outbox[next_out_byte..], inst.reg_b, bytes)?;
                 next_out_byte += bytes.len() + 3;
 
+            }
+            OP_JUMP => {
+                counter += inst.reg_a as usize;
+                if counter >= actor.instructions.len() {
+                    return Err("program counter out of bounds");
+                }
             }
             _ => return Err("invalid opcode"),
         }
@@ -447,6 +421,43 @@ mod tests {
         let mut r = read_outbox(&actor);
         assert_eq!(r.next(), Some(&b"1234"[..]));
         assert_eq!(r.next(), None);
+    }
+
+    #[test]
+    fn unconditional_jump() {
+        let mut actor = Actor {
+            registers: &mut [4, 8],
+            instructions: &[
+                Instruction {opcode: OP_JUMP, reg_a: 1, reg_b: 0, reg_c: 0},
+                Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
+            ],
+            constants: &[],
+            outbox: &mut [],
+            names: &[],
+        };
+
+        execute(&mut actor).unwrap();
+        assert_eq!(actor.registers, &[4, 8]);
+    }
+
+    #[test]
+    fn jump_to_another_jump() {
+        let mut actor = Actor {
+            registers: &mut [4, 8, 3],
+            instructions: &[
+                Instruction {opcode: OP_JUMP, reg_a: 1, reg_b: 0, reg_c: 0},
+                Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
+                Instruction {opcode: OP_JUMP, reg_a: 1, reg_b: 0, reg_c: 0},
+                Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
+                Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
+            ],
+            constants: &[],
+            outbox: &mut [],
+            names: &[],
+        };
+
+        execute(&mut actor).unwrap();
+        assert_eq!(actor.registers, &[3, 8, 3]);
     }
 
 }

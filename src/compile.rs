@@ -1,8 +1,9 @@
 use core::cmp::max;
 use core::convert::TryInto;
 use core::ops::Range;
+use crate::instruction::{Instruction, OP_DONE};
 use crate::scan::{ScanOp, Script, script_next};
-use crate::execute::{Instruction, OP_DONE, Actor};
+use crate::execute::Actor;
 use crate::token::{Token, Tokenizer, tokenize};
 use crate::typing::{DataType, Register, int_to_register, float_to_register, range_to_register};
 

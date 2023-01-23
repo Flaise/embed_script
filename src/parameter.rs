@@ -1,5 +1,5 @@
 use crate::compile::{Compilation, token_to_register_id, MAX_EVENT};
-use crate::execute::{Instruction, OP_MOVE, OP_INT_ADD, OP_INT_SUB, OP_INT_EQ, OP_INT_NE, OP_DONE, OP_INT_MUL, OP_INT_DIV};
+use crate::instruction::{Instruction, OP_MOVE, OP_INT_ADD, OP_INT_SUB, OP_INT_EQ, OP_INT_NE, OP_DONE, OP_INT_MUL, OP_INT_DIV, OP_JUMP};
 use crate::token::{Token, Tokenizer};
 use crate::typing::DataType;
 
@@ -112,15 +112,15 @@ fn is_branch_opcode(opcode: u8) -> bool {
     }
 }
 
-pub fn parse_end_if(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
-    tok.expect_end_of_input()?;
+fn close_last_branch(compilation: &mut Compilation, skip_last: bool) -> Result<(), &'static str> {
+    let start = if skip_last { 2 } else { 1 };
 
-    for dist in 1..=compilation.next_instruction {
+    for dist in start..=compilation.next_instruction {
         let current_index = compilation.next_instruction - dist;
 
         let instructions = compilation.pick_instructions_mut();
         let current = &mut instructions[current_index];
-        if is_branch_opcode(current.opcode) && current.reg_a == 0 {
+        if (is_branch_opcode(current.opcode) || current.opcode == OP_JUMP) && current.reg_a == 0 {
             let dist = dist - 1;
             if dist > u8::MAX as usize {
                 return Err("too many instructions in branch");
@@ -138,7 +138,19 @@ pub fn parse_end_if(tok: &mut Tokenizer, compilation: &mut Compilation) -> Resul
         }
     }
 
+    // TODO: this is the wrong error message for an else command
     Err("end if without if")
+}
+
+pub fn parse_end_if(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
+    tok.expect_end_of_input()?;
+    close_last_branch(compilation, false)
+}
+
+pub fn parse_else(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
+    tok.expect_end_of_input()?;
+    compilation.write_instruction(Instruction {opcode: OP_JUMP, reg_a: 0, reg_b: 0, reg_c: 0})?;
+    close_last_branch(compilation, true)
 }
 
 pub fn parse_event(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
@@ -181,7 +193,7 @@ pub fn parse_end_event(tok: &mut Tokenizer, compilation: &mut Compilation)
 mod tests {
     use super::*;
     use crate::compile::{compile, execute_compilation, Commands, Parsers};
-    use crate::execute::{OP_DONE, execute_event};
+    use crate::execute::execute_event;
     use crate::parameter::{parse_if, parse_end_if, parse_set};
     use crate::typing::{float_to_register, int_to_register};
 
@@ -191,6 +203,7 @@ mod tests {
         "set",
         "event",
         "end event",
+        "else",
     ];
     const PARSERS: Parsers = &[
         parse_if,
@@ -198,6 +211,7 @@ mod tests {
         parse_set,
         parse_event,
         parse_end_event,
+        parse_else,
     ];
 
     #[test]
@@ -412,6 +426,44 @@ mod tests {
 
             Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
             Instruction {opcode: OP_INT_NE, reg_a: 0, reg_b: 0, reg_c: 1},
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+        ]);
+    }
+
+    #[test]
+    fn if_else_empty() {
+        let source = "
+            if r = 10
+            else
+            end if
+        ";
+        let comp = compile(source, COMMANDS, PARSERS).unwrap();
+
+        assert_eq!(&comp.registers[0..3], &[0, 10, 0]);
+        assert_eq!(comp.pick_instructions(), &[
+            Instruction {opcode: OP_INT_NE, reg_a: 1, reg_b: 0, reg_c: 1},
+            Instruction {opcode: OP_JUMP, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+        ]);
+    }
+
+    #[test]
+    fn if_else_set() {
+        let source = "
+            if r = 10
+                set r: 11
+            else
+                set r: 12
+            end if
+        ";
+        let comp = compile(source, COMMANDS, PARSERS).unwrap();
+
+        assert_eq!(comp.pick_registers(), &[0, 10, 11, 12]);
+        assert_eq!(comp.pick_instructions(), &[
+            Instruction {opcode: OP_INT_NE, reg_a: 2, reg_b: 0, reg_c: 1},
+            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
+            Instruction {opcode: OP_JUMP, reg_a: 1, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 3, reg_c: 0},
             Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
         ]);
     }
