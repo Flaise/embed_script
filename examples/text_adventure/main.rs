@@ -3,9 +3,10 @@ use std::io::{stdin, BufRead, stdout, Write};
 use std::process::exit;
 use std::str::from_utf8;
 use scripting::compile::{Commands, Parsers, Compilation};
-use scripting::execute::{Instruction, Actor, OP_OUTBOX_TAGGED, execute_at, execute_event};
+use scripting::execute::{Actor, execute_at, execute_event};
+use scripting::instruction::{Instruction, OP_OUTBOX_TAGGED};
 use scripting::outbox::read_outbox;
-use scripting::parameter::{parse_if, parse_end_if, parse_set, parse_event, parse_end_event};
+use scripting::parameter::{parse_if, parse_end_if, parse_set, parse_event, parse_end_event, parse_else};
 use scripting::token::Tokenizer;
 use scripting::version::compile_with_version;
 
@@ -34,6 +35,7 @@ const COMMANDS: Commands = &[
     "end event",
     "print",
     "option",
+    "else",
 ];
 
 const PARSERS: Parsers = &[
@@ -44,6 +46,7 @@ const PARSERS: Parsers = &[
     parse_end_event,
     parse_print,
     parse_option,
+    parse_else,
 ];
 
 const TAG_PRINT: u8 = 1;
