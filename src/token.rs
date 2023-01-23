@@ -22,7 +22,7 @@ impl<'a> Token<'a> {
 
 fn is_symbol_char(ch: u8) -> bool {
     match ch {
-        b'!' | b'=' | b'<' | b'>' | b'(' | b')' | b'+' | b'-' | b'/' | b':' | b'*' => true,
+        b'!' | b'=' | b'<' | b'>' | b'(' | b')' | b'+' | b'-' | b'/' | b':' | b'*' | b'#' => true,
         _ => false,
     }
 }
@@ -76,8 +76,55 @@ pub struct Tokenizer<'a> {
 }
 
 impl<'a> Tokenizer<'a> {
+    pub fn expect_end_of_input(&mut self) -> Result<(), &'static str> {
+        match self.next() {
+            Token::Done => {
+                Ok(())
+            }
+            _ => {
+                // TODO: need proper usage of ::CommandEnd and ::Done because
+                // user shouldn't be told that end of line is end of input
+                Err("expected end of [...]")
+            }
+        }
+    }
+
+    pub fn expect_identifier(&mut self) -> Result<&'a [u8], &'static str> {
+        match self.next() {
+            Token::Identifier(val) => Ok(val.as_bytes()),
+            _ => {
+                // TODO: need to show token to user
+                Err("expected identifier")
+            }
+        }
+    }
+
+    pub fn expect_symbol(&mut self) -> Result<&'a [u8], &'static str> {
+        match self.next() {
+            Token::Symbol(sym) => Ok(sym.as_bytes()),
+            _ => {
+                Err("expected symbol")
+            }
+        }
+    }
+
+    pub fn expect_one_symbol(&mut self, check: &[u8]) -> Result<(), &'static str> {
+        let sym = self.expect_symbol()?;
+        if sym != check {
+            return Err("wrong symbol");
+        }
+        Ok(())
+    }
+
     pub fn remainder(&self) -> &[u8] {
         self.source
+    }
+
+    pub fn expect_remainder(&self) -> Result<&[u8], &'static str> {
+        if self.source.len() == 0 {
+            return Err("expected parameters, not end of command");
+        }
+        Ok(self.source)
     }
 
     pub fn next(&mut self) -> Token<'a> {
@@ -105,15 +152,7 @@ impl<'a> Tokenizer<'a> {
         self.last_result
     }
 
-    fn peek_simple(&mut self) -> Token<'a> {
-        self.pick_simple(false)
-    }
-
     fn next_simple(&mut self) -> Token<'a> {
-        self.pick_simple(true)
-    }
-
-    fn pick_simple(&mut self, take: bool) -> Token<'a> {
         let mut last_index = 0;
         let mut found_tab = false;
         let mut state = TokenState::Initial;
@@ -173,10 +212,8 @@ impl<'a> Tokenizer<'a> {
                             found_tab = false;
                             self.in_command = true;
                         }
-                        if take {
-                            self.source = &self.source[last_index..];
-                            last_index = 0;
-                        }
+                        self.source = &self.source[last_index..];
+                        last_index = 0;
 
                         if is_ident_first_char(c) {
                             state = TokenState::Identifier;
@@ -209,7 +246,7 @@ impl<'a> Tokenizer<'a> {
                         true
                     };
                     if done {
-                        let seg = self.pick_segment(last_index, take);
+                        let seg = self.pick_segment(last_index);
                         match seg.parse::<i32>() {
                             Ok(val) => return Token::Integer(val),
                             Err(_) => return Token::Err(()),
@@ -235,7 +272,7 @@ impl<'a> Tokenizer<'a> {
                         true
                     };
                     if done {
-                        let seg = self.pick_segment(last_index, take);
+                        let seg = self.pick_segment(last_index);
                         if seg.as_bytes()[seg.len() - 1] == b'.' {
                             // No trailing dot allowed in floating point numbers.
                             return Token::Err(()); // TODO
@@ -263,7 +300,7 @@ impl<'a> Tokenizer<'a> {
                         true
                     };
                     if done {
-                        let seg = self.pick_segment(last_index, take);
+                        let seg = self.pick_segment(last_index);
 
                         if cfg!(debug_assertions) {
                             for c in seg.bytes() {
@@ -291,9 +328,9 @@ impl<'a> Tokenizer<'a> {
                         true
                     };
                     if done {
-                        let seg = self.pick_segment(last_index, take);
+                        let seg = self.pick_segment(last_index);
 
-                        if take && state == TokenState::Whitespace && c != Some(b'\t') {
+                        if state == TokenState::Whitespace && c != Some(b'\t') {
                             self.source = &self.source[1..];
                         }
 
@@ -305,11 +342,9 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn pick_segment(&mut self, index: usize, take: bool) -> &'a str {
+    fn pick_segment(&mut self, index: usize) -> &'a str {
         let result = from_utf8(&self.source[..index]).unwrap();
-        if take {
-            self.source = &self.source[index..];
-        }
+        self.source = &self.source[index..];
         result
     }
 }
@@ -684,20 +719,15 @@ mod tests {
     #[test]
     fn peek_one() {
         let mut tokenizer = tokenize("one");
-        assert_eq!(tokenizer.peek_simple(), Token::Identifier("one"));
         assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
-        assert_eq!(tokenizer.peek_simple(), Token::Done);
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn peek_two() {
         let mut tokenizer = tokenize("one two");
-        assert_eq!(tokenizer.peek_simple(), Token::Identifier("one"));
         assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
-        assert_eq!(tokenizer.peek_simple(), Token::Identifier("two"));
         assert_eq!(tokenizer.next_simple(), Token::Identifier("two"));
-        assert_eq!(tokenizer.peek_simple(), Token::Done);
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
@@ -713,5 +743,25 @@ mod tests {
         let mut tokenizer = tokenize("one  two");
         assert_eq!(tokenizer.next(), Token::Identifier("one"));
         assert_eq!(tokenizer.remainder(), b" two");
+    }
+
+    #[test]
+    fn setting_expectations() {
+        let mut tok = tokenize("one");
+        assert_eq!(tok.expect_identifier(), Ok(&b"one"[..]));
+
+        let mut tok = tokenize("one");
+        assert!(tok.expect_end_of_input().is_err());
+
+        let mut tok = tokenize("one two");
+        assert_eq!(tok.expect_identifier(), Ok(&b"one"[..]));
+        assert_eq!(tok.expect_identifier(), Ok(&b"two"[..]));
+        assert!(tok.expect_end_of_input().is_ok());
+
+        let mut tok = tokenize("1");
+        assert!(tok.expect_end_of_input().is_err());
+
+        let mut tok = tokenize("1invalid");
+        assert!(tok.expect_end_of_input().is_err());
     }
 }

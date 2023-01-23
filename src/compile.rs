@@ -1,23 +1,21 @@
+use core::cmp::max;
 use core::convert::TryInto;
 use core::ops::Range;
-use crate::scan::ScanOp;
-use crate::execute::{Instruction, OP_DONE, Actor, execute};
-use crate::script::{Script, script_next, Commands};
-use crate::token::Token;
-use crate::typing::{DataType, Register, int_to_register, float_to_register};
+use crate::scan::{ScanOp, Script, script_next};
+use crate::execute::{Instruction, OP_DONE, Actor};
+use crate::token::{Token, Tokenizer, tokenize};
+use crate::typing::{DataType, Register, int_to_register, float_to_register, range_to_register};
 
-pub fn execute_event(compilation: &mut Compilation, event_name: &[u8]) -> Result<(), &'static str> {
-    if let Some(location) = compilation.event_by_name(event_name) {
-        let mut actor = compilation.as_actor();
-        execute(&mut actor, location)
-    } else {
-        Err("event not found")
-    }
-}
+pub type Parser = fn(parameters: &mut Tokenizer, registers: &mut Compilation) -> Result<(), &'static str>;
+pub type Parsers<'a> = &'a [Parser];
+pub type Commands<'a> = &'a [&'a str];
 
+#[cfg(test)]
 pub fn execute_compilation(compilation: &mut Compilation) -> Result<(), &'static str> {
+    use crate::execute::execute_at;
+
     let mut actor = compilation.as_actor();
-    execute(&mut actor, 0)
+    execute_at(&mut actor, 0)
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -31,7 +29,7 @@ const EVENT_BIT_16: u16 = 0b1000_0000_0000_0000;
 pub const MAX_EVENT: u16 = 0b0111_1111_1111_1111;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-struct NameSpec {
+pub struct NameSpec {
     start: u16,
     end: u16,
     /// First bit == 1 -> event, otherwise -> register.
@@ -66,12 +64,21 @@ impl NameSpec {
     }
 }
 
+pub fn event_by_name(names: &[NameSpec], other_bytes: &[u8], check: &[u8]) -> Option<u16> {
+    for spec in names {
+        if spec.pick_bytes(other_bytes).eq_ignore_ascii_case(check) {
+            return spec.event_location();
+        }
+    }
+    None
+}
+
 #[derive(Debug)]
 pub struct Compilation {
     pub registers: [Register; NUM_REGISTERS],
     metadata: [RegisterInfo; NUM_REGISTERS],
     names: [NameSpec; NUM_REGISTERS + 50],
-    pub other_bytes: [u8; 1024],
+    pub other_bytes: [u8; 2048],
     pub next_register: usize,
     pub next_name: usize,
     pub next_byte: usize,
@@ -86,7 +93,7 @@ impl Default for Compilation {
             registers: [0; NUM_REGISTERS],
             metadata: [RegisterInfo::default(); NUM_REGISTERS],
             names: [NameSpec::default(); NUM_REGISTERS + 50],
-            other_bytes: [0; 1024],
+            other_bytes: [0; 2048],
             next_register: 0,
             next_name: 0,
             next_byte: 0,
@@ -148,7 +155,8 @@ impl Compilation {
         let (constants, outbox) = self.other_bytes.split_at_mut(self.next_byte);
         let registers = &mut self.registers[..self.next_register];
         let instructions = &self.instructions[..self.next_instruction];
-        Actor {registers, instructions, constants, outbox}
+        let names = &self.names[..self.next_name];
+        Actor {registers, instructions, constants, outbox, names}
     }
 
     pub fn register_by_name(&self, check: &[u8]) -> Option<u8> {
@@ -168,15 +176,19 @@ impl Compilation {
     }
 
     pub fn event_by_name(&self, check: &[u8]) -> Option<u16> {
-        for spec in self.valid_names() {
-            if spec.pick_bytes(&self.other_bytes).eq_ignore_ascii_case(check) {
-                return spec.event_location();
-            }
-        }
-        None
+        event_by_name(&self.names[..self.next_name], &self.other_bytes, check)
     }
 
-    pub fn write_bytes(&mut self, value: &[u8]) -> Result<(u16, u16), &'static str> {
+    pub fn write_bytes_and_register(&mut self, value: &[u8]) -> Result<u8, &'static str> {
+        let range = self.write_bytes(value)?;
+        self.write_constant_range(range)
+    }
+
+    pub fn write_bytes(&mut self, value: &[u8]) -> Result<Range<u16>, &'static str> {
+        if value.len() == 0 {
+            return Ok(0..0);
+        }
+
         let mut start = self.next_byte;
 
         if let Some(pos) = find_subsequence(self.pick_constants(), value) {
@@ -204,9 +216,9 @@ impl Compilation {
             return Err("not enough room for constant bytes");
         }
         self.other_bytes[start..end].copy_from_slice(value);
-        self.next_byte = end;
+        self.next_byte = max(self.next_byte, end);
 
-        Ok((start as u16, end as u16))
+        Ok(start as u16..end as u16)
     }
 
     fn write_name(&mut self, value: &[u8], register_or_event: u16) -> Result<(), &'static str> {
@@ -226,7 +238,9 @@ impl Compilation {
             }
         }
 
-        let (start, end) = self.write_bytes(value)?;
+        let range = self.write_bytes(value)?;
+        let start = range.start;
+        let end = range.end;
 
         self.names[self.next_name] = NameSpec {
             start,
@@ -252,10 +266,6 @@ impl Compilation {
 
     fn valid_names(&self) -> impl Iterator<Item=&NameSpec> {
         self.names.iter().take(self.next_name)
-    }
-
-    fn valid_name_bytes(&self) -> impl Iterator<Item=&[u8]> {
-        self.valid_names().map(move |spec| spec.pick_bytes(&self.other_bytes))
     }
 
     fn register_name(&self, id: u8) -> &[u8] {
@@ -357,11 +367,20 @@ impl Compilation {
         Ok(id)
     }
 
+    pub fn write_constant_range(&mut self, range: Range<u16>)
+    -> Result<u8, &'static str> {
+        let reg = range_to_register(range);
+        let id = self.write_constant(reg, DataType::Range)?;
+
+        debug_assert_eq!(self.get_data_type(id), DataType::Range);
+
+        Ok(id)
+    }
+
     pub fn write_constant_int(&mut self, value: i32) -> Result<u8, &'static str> {
         let id = self.write_constant(int_to_register(value), DataType::I32)?;
 
-        let data_type = self.get_data_type(id);
-        debug_assert_eq!(data_type, DataType::I32);
+        debug_assert_eq!(self.get_data_type(id), DataType::I32);
 
         Ok(id)
     }
@@ -369,13 +388,16 @@ impl Compilation {
     pub fn write_constant_float(&mut self, value: f32) -> Result<u8, &'static str> {
         let id = self.write_constant(float_to_register(value), DataType::F32)?;
 
-        let data_type = self.get_data_type(id);
-        debug_assert_eq!(data_type, DataType::F32);
+        debug_assert_eq!(self.get_data_type(id), DataType::F32);
 
         Ok(id)
     }
 
     pub fn write_event(&mut self, name: &[u8], offset: u16) -> Result<(), &'static str> {
+        if offset as usize > self.next_instruction {
+            // create event for existing instruction or next upcoming instruction
+            return Err("event offset out of range");
+        }
         if offset > MAX_EVENT {
             return Err("event offset too high");
         }
@@ -441,11 +463,11 @@ pub fn token_to_register_id(compilation: &mut Compilation, token: Token, constan
     }
 }
 
-pub type Parser = fn (parameters: &str, registers: &mut Compilation) -> Result<(), &'static str>;
-
 pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
 -> Result<Compilation, &'static str> {
-    debug_assert!(commands.len() == parsers.len());
+    if commands.len() != parsers.len() {
+        return Err("command list and parser list must be the same length");
+    }
 
     let mut script = Script::new(source);
     let mut compilation = Compilation::default();
@@ -454,28 +476,32 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
 
     loop {
         if compilation.next_instruction != 0 && script.source.len() >= prev_len {
-            return Err("no bytes processed");
+            return Err("internal error: no bytes processed");
         }
         prev_len = script.source.len();
 
-        let parseop = script_next(&mut script, commands);
+        let scanop = script_next(&mut script, commands);
 
-        match parseop {
+        match scanop {
             ScanOp::Op(op) => {
                 if let Some(parser) = parsers.get(op.command_index) {
-                    parser(op.parameters, &mut compilation)?;
+                    let mut tok = tokenize(op.parameters);
+                    parser(&mut tok, &mut compilation)?;
                 } else {
                     return Err("internal error: invalid command index");
                 }
             }
             ScanOp::Done => {
                 if compilation.next_instruction < compilation.instructions.len() {
-                    compilation.write_instruction(Instruction {
-                        opcode: OP_DONE,
-                        reg_a: 0,
-                        reg_b: 0,
-                        reg_c: 0,
-                    })?;
+                    if compilation.last_instruction().map(|inst| inst.opcode == OP_DONE) != Some(true) {
+                        compilation.write_instruction(Instruction {
+                            opcode: OP_DONE,
+                            reg_a: 0,
+                            reg_b: 0,
+                            reg_c: 0,
+                        })?;
+                    }
+                    debug_assert_eq!(compilation.last_instruction().unwrap().opcode, OP_DONE);
                 }
                 return Ok(compilation);
             }
@@ -489,6 +515,7 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::typing::register_to_range;
 
     const COMMANDS: Commands = &[
         "if",
@@ -496,7 +523,7 @@ mod tests {
         "set",
     ];
 
-    fn no(_: &str, _: &mut Compilation) -> Result<(), &'static str> {
+    fn no(_: &mut Tokenizer, _: &mut Compilation) -> Result<(), &'static str> {
         panic!("should not be called");
     }
 
@@ -541,13 +568,13 @@ mod tests {
     fn single_letter_names() {
         let mut wr = Compilation::default();
 
-        wr.write_name(b"a", 0);
+        wr.write_name(b"a", 0).unwrap();
         assert_eq!(wr.names[0], NameSpec {start: 0, end: 1, register_or_event: 0});
         assert_eq!(wr.names[0].register_id(), Some(0));
         assert_eq!(wr.register_name(0), b"a");
         assert_eq!(wr.register_by_name(b"a"), Some(0));
 
-        wr.write_name(b"b", 1);
+        wr.write_name(b"b", 1).unwrap();
         assert_eq!(wr.names[0], NameSpec {start: 0, end: 1, register_or_event: 0});
         assert_eq!(wr.names[1], NameSpec {start: 1, end: 2, register_or_event: 1});
         assert_eq!(wr.register_name(0), b"a");
@@ -562,8 +589,8 @@ mod tests {
     fn long_names() {
         let mut wr = Compilation::default();
 
-        wr.write_name(b"abc", 0);
-        wr.write_name(b"rqs", 1);
+        wr.write_name(b"abc", 0).unwrap();
+        wr.write_name(b"rqs", 1).unwrap();
         assert_eq!(wr.register_name(0), b"abc");
         assert_eq!(wr.register_name(1), b"rqs");
         assert_eq!(wr.register_by_name(b"abc"), Some(0));
@@ -576,8 +603,8 @@ mod tests {
     fn skip_register() {
         let mut wr = Compilation::default();
 
-        wr.write_name(b"abc", 0);
-        wr.write_name(b"rqs", 2);
+        wr.write_name(b"abc", 0).unwrap();
+        wr.write_name(b"rqs", 2).unwrap();
         assert_eq!(wr.register_name(0), b"abc");
         assert_eq!(wr.register_name(2), b"rqs");
         assert_eq!(wr.register_by_name(b"abc"), Some(0));
@@ -612,28 +639,78 @@ mod tests {
     #[test]
     fn string_writing() {
         let mut wr = Compilation::default();
-        assert_eq!(wr.write_bytes(b"abcd"), Ok((0, 4)));
+        assert_eq!(wr.write_bytes(b"abcd"), Ok(0..4));
         assert_eq!(wr.pick_constants(), b"abcd");
-        assert_eq!(wr.write_bytes(b"1234"), Ok((4, 8)));
+        assert_eq!(wr.write_bytes(b"1234"), Ok(4..8));
         assert_eq!(wr.pick_constants(), b"abcd1234");
     }
 
     #[test]
     fn string_duplication() {
         let mut wr = Compilation::default();
-        assert_eq!(wr.write_bytes(b"abcd"), Ok((0, 4)));
+        assert_eq!(wr.write_bytes(b"abcd"), Ok(0..4));
         assert_eq!(wr.pick_constants(), b"abcd");
-        assert_eq!(wr.write_bytes(b"abcd"), Ok((0, 4)));
+        assert_eq!(wr.write_bytes(b"abcd"), Ok(0..4));
         assert_eq!(wr.pick_constants(), b"abcd");
     }
 
     #[test]
     fn string_overlap() {
         let mut wr = Compilation::default();
-        assert_eq!(wr.write_bytes(b"abcd"), Ok((0, 4)));
+        assert_eq!(wr.write_bytes(b"abcd"), Ok(0..4));
         assert_eq!(wr.pick_constants(), b"abcd");
-        assert_eq!(wr.write_bytes(b"cd12"), Ok((2, 6)));
+        assert_eq!(wr.write_bytes(b"cd12"), Ok(2..6));
         assert_eq!(wr.pick_constants(), b"abcd12");
+    }
+
+    #[test]
+    fn string_inset() {
+        let mut wr = Compilation::default();
+        assert_eq!(wr.write_bytes(b"abcd"), Ok(0..4));
+        assert_eq!(wr.pick_constants(), b"abcd");
+        assert_eq!(wr.write_bytes(b"b"), Ok(1..2));
+        assert_eq!(wr.pick_constants(), b"abcd");
+        assert_eq!(wr.write_bytes(b"1234"), Ok(4..8));
+        assert_eq!(wr.pick_constants(), b"abcd1234");
+    }
+
+    #[test]
+    fn empty_string() {
+        let mut wr = Compilation::default();
+        assert_eq!(wr.write_bytes(b""), Ok(0..0));
+    }
+
+    #[test]
+    fn constant_ranges() {
+        let mut wr = Compilation::default();
+        wr.write_constant_range(0..0).unwrap();
+        assert_eq!(wr.pick_registers()[0], range_to_register(0..0));
+
+        let mut wr = Compilation::default();
+        wr.write_constant_range(1..5).unwrap();
+        assert_eq!(wr.pick_registers()[0], range_to_register(1..5));
+    }
+
+    #[test]
+    fn string_and_range() {
+        let mut wr = Compilation::default();
+        let id = wr.write_bytes_and_register(b"uiop").unwrap();
+
+        assert_eq!(id, 0);
+        assert_eq!(wr.pick_registers()[id as usize], range_to_register(0..4));
+
+        let range = register_to_range(wr.pick_registers()[id as usize]);
+        assert_eq!(&wr.pick_constants()[range], &b"uiop"[..]);
+    }
+
+    #[test]
+    fn termination() {
+        let mut wr = Compilation::default();
+        assert_eq!(wr.last_instruction(), None);
+        wr.write_instruction(Instruction {opcode: 1, reg_a: 2, reg_b: 3, reg_c: 4}).unwrap();
+        assert_eq!(wr.last_instruction(), Some(&Instruction {opcode: 1, reg_a: 2, reg_b: 3, reg_c: 4}));
+        wr.write_instruction(Instruction {opcode: 5, reg_a: 6, reg_b: 3, reg_c: 4}).unwrap();
+        assert_eq!(wr.last_instruction(), Some(&Instruction {opcode: 5, reg_a: 6, reg_b: 3, reg_c: 4}));
     }
 
 }

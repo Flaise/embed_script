@@ -1,3 +1,4 @@
+use crate::compile::Commands;
 use crate::token::{tokenize, Token, Tokenizer};
 pub use self::ScriptError::*;
 
@@ -32,6 +33,7 @@ pub enum ScanOp<'a> {
 }
 
 impl<'a> ScanOp<'a> {
+    #[cfg(test)]
     pub fn is_err(&self) -> bool {
         if let ScanOp::Err(_) = self {
             return true;
@@ -51,6 +53,7 @@ pub enum ScanLine<'a> {
 }
 
 impl<'a> ScanLine<'a> {
+    #[cfg(test)]
     pub fn is_err(&self) -> bool {
         if let ScanLine::Err(_) = self {
             return true;
@@ -144,6 +147,11 @@ pub fn scan_line<'a>(mut program: &'a str, commands: &[&str]) -> ScanLine<'a> {
                     program = remainder;
                     continue;
                 }
+                if line.as_bytes()[0] == b'#' {
+                    // using # as comment character
+                    program = remainder;
+                    continue;
+                }
                 return pick_command(line, remainder, commands);
             }
             Progress::Err(error) => {
@@ -153,9 +161,32 @@ pub fn scan_line<'a>(mut program: &'a str, commands: &[&str]) -> ScanLine<'a> {
     }
 }
 
+pub struct Script<'a> {
+    pub source: &'a str,
+}
+
+impl<'a> Script<'a> {
+    pub fn new(source: &'a str) -> Script<'a> {
+        Script {source}
+    }
+}
+
+pub fn script_next<'a, 'b>(script: &'a mut Script, commands: Commands<'b>)
+-> ScanOp<'a> {
+    match scan_line(&script.source, commands) {
+        ScanLine::Done => ScanOp::Done,
+        ScanLine::Err(error) => ScanOp::Err(error),
+        ScanLine::Op {opline, remainder} => {
+            script.source = remainder;
+            ScanOp::Op(opline)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compile::Commands;
 
     const COMMANDS: &[&str] = &[
         "if", // 0
@@ -166,6 +197,46 @@ mod tests {
         "end event", // 5
         "version", // 6
     ];
+    const ENV: Commands = &[
+        "if",
+        "else if",
+        "end if",
+        "set",
+        "event",
+        "end event",
+        "version",
+    ];
+
+    #[test]
+    fn multiline() {
+        let mut script = Script::new("version 1\nevent um\nend event");
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 6, parameters: "1"}));
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 4, parameters: "um"}));
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 5, parameters: ""}));
+    }
+
+    #[test]
+    fn multi_whitespace() {
+        let mut script = Script::new("  version 1\n\nevent um\n\tend event");
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 6, parameters: "1"}));
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 4, parameters: "um"}));
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 5, parameters: ""}));
+    }
+
+    #[test]
+    fn parse_error() {
+        let mut script = Script::new("version 1\ne vent um\nend event");
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 6, parameters: "1"}));
+        assert!(script_next(&mut script, ENV).is_err());
+    }
+
+    #[test]
+    fn multi_windows() {
+        let mut script = Script::new("version 1\r\nevent um\r\nend event");
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 6, parameters: "1"}));
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 4, parameters: "um"}));
+        assert_eq!(script_next(&mut script, ENV), ScanOp::Op(OpLine {command_index: 5, parameters: ""}));
+    }
 
     #[test]
     fn line_separation() {
@@ -326,6 +397,60 @@ mod tests {
     #[test]
     fn trailing_tab_ok() {
         assert_eq!(scan_line("end if\t", COMMANDS), ScanLine::Op {
+            opline: OpLine {
+                command_index: 2,
+                parameters: "",
+            },
+            remainder: "",
+        });
+    }
+
+    #[test]
+    fn comment_character() {
+        assert_eq!(scan_line("#", COMMANDS), ScanLine::Done);
+    }
+
+    #[test]
+    fn comment_with_space() {
+        assert_eq!(scan_line("# comment", COMMANDS), ScanLine::Done);
+    }
+
+    #[test]
+    fn comment_without_space() {
+        assert_eq!(scan_line("#comment", COMMANDS), ScanLine::Done);
+    }
+
+    #[test]
+    fn double_comment_character() {
+        assert_eq!(scan_line("##", COMMANDS), ScanLine::Done);
+        assert_eq!(scan_line("##comment", COMMANDS), ScanLine::Done);
+        assert_eq!(scan_line("## comment", COMMANDS), ScanLine::Done);
+    }
+
+    #[test]
+    fn skip_comment() {
+        assert_eq!(scan_line("#\nend if", COMMANDS), ScanLine::Op {
+            opline: OpLine {
+                command_index: 2,
+                parameters: "",
+            },
+            remainder: "",
+        });
+        assert_eq!(scan_line("# comment\nend if", COMMANDS), ScanLine::Op {
+            opline: OpLine {
+                command_index: 2,
+                parameters: "",
+            },
+            remainder: "",
+        });
+        assert_eq!(scan_line("##\nend if", COMMANDS), ScanLine::Op {
+            opline: OpLine {
+                command_index: 2,
+                parameters: "",
+            },
+            remainder: "",
+        });
+        assert_eq!(scan_line("##comment\nend if", COMMANDS), ScanLine::Op {
             opline: OpLine {
                 command_index: 2,
                 parameters: "",

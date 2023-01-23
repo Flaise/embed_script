@@ -1,6 +1,6 @@
 use crate::compile::{Compilation, token_to_register_id, MAX_EVENT};
 use crate::execute::{Instruction, OP_MOVE, OP_INT_ADD, OP_INT_SUB, OP_INT_EQ, OP_INT_NE, OP_DONE, OP_INT_MUL, OP_INT_DIV};
-use crate::token::{Token, tokenize};
+use crate::token::{Token, Tokenizer};
 use crate::typing::DataType;
 
 fn match_register_types(compilation: &mut Compilation, ids: &[u8]) -> Result<(), &'static str> {
@@ -18,17 +18,9 @@ fn match_register_types(compilation: &mut Compilation, ids: &[u8]) -> Result<(),
     Err("unknown type")
 }
 
-pub fn parse_set(parameters: &str, compilation: &mut Compilation) -> Result<(), &'static str> {
-
-    let mut tok = tokenize(parameters);
-
+pub fn parse_set(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
     let dest = token_to_register_id(compilation, tok.next(), false)?;
-
-    match tok.next() {
-        Token::Symbol(":") => {}
-        _ => return Err("set command syntax is    set variable: expression    (missing :)"),
-    }
-
+    tok.expect_one_symbol(b":")?;
     let b = token_to_register_id(compilation, tok.next(), true)?;
 
     let op = match tok.next() {
@@ -65,20 +57,13 @@ pub fn parse_set(parameters: &str, compilation: &mut Compilation) -> Result<(), 
     };
 
     let c = token_to_register_id(compilation, tok.next(), true)?;
+    tok.expect_end_of_input()?;
+
     match_register_types(compilation, &[dest, b, c])?;
-
-    match tok.next() {
-        Token::Done => {}
-        _ => return Err("currently the set command only takes 1 or 2 terms separated by an operator, i.e. A + 1"),
-    }
-
     compilation.write_instruction(Instruction {opcode: op, reg_a: dest, reg_b: b, reg_c: c})
 }
 
-pub fn parse_if(parameters: &str, compilation: &mut Compilation) -> Result<(), &'static str> {
-
-    let mut tok = tokenize(parameters);
-
+pub fn parse_if(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
     let b = token_to_register_id(compilation, tok.next(), true)?;
 
     let op = match tok.next() {
@@ -111,16 +96,12 @@ pub fn parse_if(parameters: &str, compilation: &mut Compilation) -> Result<(), &
     };
 
     let c = token_to_register_id(compilation, tok.next(), true)?;
-    match tok.next() {
-        Token::Done => {}
-        _ => return Err("currently the if command only takes 2 terms separated by an operator, i.e. A = 1"),
-    }
-
-    match_register_types(compilation, &[b, c])?;
+    tok.expect_end_of_input()?;
 
     // let data_type = registers.get_data_type(b);
-    // pick correct opcode type
+    // TODO: pick correct opcode type
 
+    match_register_types(compilation, &[b, c])?;
     compilation.write_instruction(Instruction {opcode: op, reg_a: 0, reg_b: b, reg_c: c})
 }
 
@@ -131,48 +112,52 @@ fn is_branch_opcode(opcode: u8) -> bool {
     }
 }
 
-pub fn parse_end_if(parameters: &str, compilation: &mut Compilation) -> Result<(), &'static str> {
-    if parameters.len() > 0 {
-        return Err("end if doesn't take any parameters");
-    }
+pub fn parse_end_if(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
+    tok.expect_end_of_input()?;
 
-    for dist in 0..compilation.next_instruction {
-        let current_index = compilation.next_instruction - dist - 1;
-        if current_index <= MAX_EVENT as usize && compilation.is_event(current_index as u16) {
-            return Err("end if before end event");
-        }
+    for dist in 1..=compilation.next_instruction {
+        let current_index = compilation.next_instruction - dist;
 
         let instructions = compilation.pick_instructions_mut();
         let current = &mut instructions[current_index];
-
         if is_branch_opcode(current.opcode) && current.reg_a == 0 {
+            let dist = dist - 1;
             if dist > u8::MAX as usize {
                 return Err("too many instructions in branch");
             }
             current.reg_a = dist as u8;
             return Ok(());
         }
+
+        if current.opcode == OP_DONE {
+            return Err("end if without if (found end of event)");
+        }
+
+        if current_index <= MAX_EVENT as usize && compilation.is_event(current_index as u16) {
+            return Err("end if without if (found start of event)");
+        }
     }
 
     Err("end if without if")
 }
 
-pub fn parse_event(parameters: &str, compilation: &mut Compilation) -> Result<(), &'static str> {
-    let mut tok = tokenize(parameters);
-    let name = match tok.next() {
-        Token::Identifier(name) => name,
-        _ => return Err("???"),
-    };
-    match tok.next() {
-        Token::Done => {},
-        _ => return Err("???"),
-    }
+pub fn parse_event(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
+    let name = tok.expect_identifier()?;
+    tok.expect_end_of_input()?;
 
     write_done(compilation)?;
 
     // TODO: need to check for failures in all casts
     let offset = compilation.next_instruction as u16;
-    compilation.write_event(name.as_bytes(), offset)
+    compilation.write_event(name, offset)?;
+
+    debug_assert!(compilation.is_event(offset));
+    debug_assert_eq!(compilation.event_by_name(name), Some(offset));
+    if offset < u16::MAX {
+        debug_assert!(!compilation.is_event(offset + 1));
+    }
+
+    Ok(())
 }
 
 fn write_done(compilation: &mut Compilation) -> Result<(), &'static str> {
@@ -184,11 +169,9 @@ fn write_done(compilation: &mut Compilation) -> Result<(), &'static str> {
     compilation.write_instruction(Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0})
 }
 
-pub fn parse_end_event(parameters: &str, compilation: &mut Compilation)
+pub fn parse_end_event(tok: &mut Tokenizer, compilation: &mut Compilation)
 -> Result<(), &'static str> {
-    if parameters.len() > 0 {
-        return Err("end event doesn't take any parameters");
-    }
+    tok.expect_end_of_input()?;
 
     compilation.write_instruction(Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0})
     // write_done(instructions) // this would only serve as an optimization for an empty event
@@ -197,10 +180,9 @@ pub fn parse_end_event(parameters: &str, compilation: &mut Compilation)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compile::{Parser, compile, execute_compilation, execute_event};
-    use crate::execute::OP_DONE;
+    use crate::compile::{compile, execute_compilation, Commands, Parsers};
+    use crate::execute::{OP_DONE, execute_event};
     use crate::parameter::{parse_if, parse_end_if, parse_set};
-    use crate::script::Commands;
     use crate::typing::{float_to_register, int_to_register};
 
     const COMMANDS: Commands = &[
@@ -210,7 +192,7 @@ mod tests {
         "event",
         "end event",
     ];
-    const PARSERS: &[Parser] = &[
+    const PARSERS: Parsers = &[
         parse_if,
         parse_end_if,
         parse_set,
@@ -394,6 +376,47 @@ mod tests {
     }
 
     #[test]
+    fn two_empty_ifs() {
+        let source = "
+            if r != 10
+            end if
+            if r = 10
+            end if
+        ";
+        let comp = compile(source, COMMANDS, PARSERS).unwrap();
+
+        assert_eq!(&comp.registers[0..3], &[0, 10, 0]);
+        assert_eq!(comp.pick_instructions(), &[
+            Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
+            Instruction {opcode: OP_INT_NE, reg_a: 0, reg_b: 0, reg_c: 1},
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+        ]);
+    }
+
+    #[test]
+    fn two_empty_ifs_in_event() {
+        let source = "
+            event yeah
+                if r != 10
+                end if
+                if r = 10
+                end if
+            end event
+        ";
+        let comp = compile(source, COMMANDS, PARSERS).unwrap();
+
+        assert_eq!(&comp.registers[0..3], &[0, 10, 0]);
+        assert_eq!(comp.pick_instructions(), &[
+            // separates top scope from event
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+
+            Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
+            Instruction {opcode: OP_INT_NE, reg_a: 0, reg_b: 0, reg_c: 1},
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+        ]);
+    }
+
+    #[test]
     fn empty_event() {
         let source = "
             event do_something
@@ -426,7 +449,7 @@ mod tests {
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(comp.active_instructions(), &[
+        assert_eq!(comp.pick_instructions(), &[
             Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
             Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
             Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
@@ -445,7 +468,7 @@ mod tests {
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(comp.active_instructions(), &[
+        assert_eq!(comp.pick_instructions(), &[
             Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
             Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
             Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 3, reg_c: 0},
@@ -481,7 +504,7 @@ mod tests {
         ";
 
         let mut comp = compile(source, COMMANDS, PARSERS).unwrap();
-        execute_event(&mut comp, b"do_something").unwrap();
+        execute_event(&mut comp.as_actor(), b"do_something").unwrap();
 
         assert_eq!(comp.registers[comp.register_by_name(b"thing").unwrap() as usize], 10000);
     }
@@ -496,7 +519,7 @@ mod tests {
         ";
 
         let mut comp = compile(source, COMMANDS, PARSERS).unwrap();
-        execute_event(&mut comp, b"do_something").unwrap();
+        execute_event(&mut comp.as_actor(), b"do_something").unwrap();
 
         assert_eq!(comp.registers[comp.register_by_name(b"thing").unwrap() as usize], 10000);
     }
@@ -510,7 +533,7 @@ mod tests {
         ";
 
         let mut comp = compile(source, COMMANDS, PARSERS).unwrap();
-        execute_event(&mut comp, b"do_something").unwrap();
+        execute_event(&mut comp.as_actor(), b"do_something").unwrap();
 
         assert_eq!(comp.registers[comp.register_by_name(b"thing").unwrap() as usize], 0);
     }
@@ -529,7 +552,7 @@ mod tests {
         ";
 
         let mut comp = compile(source, COMMANDS, PARSERS).unwrap();
-        execute_event(&mut comp, b"do_something").unwrap();
+        execute_event(&mut comp.as_actor(), b"do_something").unwrap();
 
         assert_eq!(comp.registers[comp.register_by_name(b"thing").unwrap() as usize], 10000);
     }
@@ -556,11 +579,10 @@ mod tests {
                 end if
         ";
         compile(source, COMMANDS, PARSERS).unwrap_err();
-        // TODO: need to verify errors - this test is actually producing the wrong error
     }
 
     #[test]
-    fn end_if_before_end_event() {
+    fn event_before_end_if() {
         let source = "
                 if no_no_no = 999
             event this_be_error
