@@ -394,6 +394,10 @@ impl Compilation {
     }
 
     pub fn write_event(&mut self, name: &[u8], offset: u16) -> Result<(), &'static str> {
+        if offset as usize > self.next_instruction {
+            // create event for existing instruction or next upcoming instruction
+            return Err("event offset out of range");
+        }
         if offset > MAX_EVENT {
             return Err("event offset too high");
         }
@@ -489,12 +493,15 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
             }
             ScanOp::Done => {
                 if compilation.next_instruction < compilation.instructions.len() {
-                    compilation.write_instruction(Instruction {
-                        opcode: OP_DONE,
-                        reg_a: 0,
-                        reg_b: 0,
-                        reg_c: 0,
-                    })?;
+                    if compilation.last_instruction().map(|inst| inst.opcode == OP_DONE) != Some(true) {
+                        compilation.write_instruction(Instruction {
+                            opcode: OP_DONE,
+                            reg_a: 0,
+                            reg_b: 0,
+                            reg_c: 0,
+                        })?;
+                    }
+                    debug_assert_eq!(compilation.last_instruction().unwrap().opcode, OP_DONE);
                 }
                 return Ok(compilation);
             }
@@ -507,9 +514,8 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
 
 #[cfg(test)]
 mod tests {
-    use crate::typing::register_to_range;
-
     use super::*;
+    use crate::typing::register_to_range;
 
     const COMMANDS: Commands = &[
         "if",
@@ -695,6 +701,16 @@ mod tests {
 
         let range = register_to_range(wr.pick_registers()[id as usize]);
         assert_eq!(&wr.pick_constants()[range], &b"uiop"[..]);
+    }
+
+    #[test]
+    fn termination() {
+        let mut wr = Compilation::default();
+        assert_eq!(wr.last_instruction(), None);
+        wr.write_instruction(Instruction {opcode: 1, reg_a: 2, reg_b: 3, reg_c: 4}).unwrap();
+        assert_eq!(wr.last_instruction(), Some(&Instruction {opcode: 1, reg_a: 2, reg_b: 3, reg_c: 4}));
+        wr.write_instruction(Instruction {opcode: 5, reg_a: 6, reg_b: 3, reg_c: 4}).unwrap();
+        assert_eq!(wr.last_instruction(), Some(&Instruction {opcode: 5, reg_a: 6, reg_b: 3, reg_c: 4}));
     }
 
 }

@@ -27,13 +27,14 @@ EVENT workshop
 END EVENT
 
 EVENT workshop_door
-    #IF visited_door = 1
-    #    PRINT Unfortunately, that's still not implemented yet. Sorry.
-    #END IF
-    #IF visited_door = 0
-        PRINT Unfortunately, that's not implemented yet.
+    IF visited_door = 1
+        PRINT Unfortunately, that's still not implemented yet. Sorry.
+    END IF
+    IF visited_door = 0
         SET visited_door: 1
-    #END IF
+
+        PRINT Unfortunately, that's not implemented yet.
+    END IF
 
     OPTION workshop: Never mind
 END EVENT
@@ -42,9 +43,10 @@ EVENT clock_tower
     PRINT You can hear the ticking of the gears from here.
 
     IF visited_clock = 1
+        SET visited_clock: 1
+
         PRINT If only you could turn back time...
     END IF
-    SET visited_clock: 1
 
     OPTION town_square: Leave
 END EVENT

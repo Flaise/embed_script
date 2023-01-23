@@ -115,21 +115,26 @@ fn is_branch_opcode(opcode: u8) -> bool {
 pub fn parse_end_if(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
     tok.expect_end_of_input()?;
 
-    for dist in 0..compilation.next_instruction {
-        let current_index = compilation.next_instruction - dist - 1;
-        if current_index <= MAX_EVENT as usize && compilation.is_event(current_index as u16) {
-            return Err("end if before end event");
-        }
+    for dist in 1..=compilation.next_instruction {
+        let current_index = compilation.next_instruction - dist;
 
         let instructions = compilation.pick_instructions_mut();
         let current = &mut instructions[current_index];
-
         if is_branch_opcode(current.opcode) && current.reg_a == 0 {
+            let dist = dist - 1;
             if dist > u8::MAX as usize {
                 return Err("too many instructions in branch");
             }
             current.reg_a = dist as u8;
             return Ok(());
+        }
+
+        if current.opcode == OP_DONE {
+            return Err("end if without if (found end of event)");
+        }
+
+        if current_index <= MAX_EVENT as usize && compilation.is_event(current_index as u16) {
+            return Err("end if without if (found start of event)");
         }
     }
 
@@ -144,7 +149,15 @@ pub fn parse_event(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result
 
     // TODO: need to check for failures in all casts
     let offset = compilation.next_instruction as u16;
-    compilation.write_event(name, offset)
+    compilation.write_event(name, offset)?;
+
+    debug_assert!(compilation.is_event(offset));
+    debug_assert_eq!(compilation.event_by_name(name), Some(offset));
+    if offset < u16::MAX {
+        debug_assert!(!compilation.is_event(offset + 1));
+    }
+
+    Ok(())
 }
 
 fn write_done(compilation: &mut Compilation) -> Result<(), &'static str> {
@@ -363,6 +376,47 @@ mod tests {
     }
 
     #[test]
+    fn two_empty_ifs() {
+        let source = "
+            if r != 10
+            end if
+            if r = 10
+            end if
+        ";
+        let comp = compile(source, COMMANDS, PARSERS).unwrap();
+
+        assert_eq!(&comp.registers[0..3], &[0, 10, 0]);
+        assert_eq!(comp.pick_instructions(), &[
+            Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
+            Instruction {opcode: OP_INT_NE, reg_a: 0, reg_b: 0, reg_c: 1},
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+        ]);
+    }
+
+    #[test]
+    fn two_empty_ifs_in_event() {
+        let source = "
+            event yeah
+                if r != 10
+                end if
+                if r = 10
+                end if
+            end event
+        ";
+        let comp = compile(source, COMMANDS, PARSERS).unwrap();
+
+        assert_eq!(&comp.registers[0..3], &[0, 10, 0]);
+        assert_eq!(comp.pick_instructions(), &[
+            // separates top scope from event
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+
+            Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
+            Instruction {opcode: OP_INT_NE, reg_a: 0, reg_b: 0, reg_c: 1},
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+        ]);
+    }
+
+    #[test]
     fn empty_event() {
         let source = "
             event do_something
@@ -395,7 +449,7 @@ mod tests {
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(comp.active_instructions(), &[
+        assert_eq!(comp.pick_instructions(), &[
             Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
             Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
             Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
@@ -414,7 +468,7 @@ mod tests {
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(comp.active_instructions(), &[
+        assert_eq!(comp.pick_instructions(), &[
             Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
             Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
             Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 3, reg_c: 0},
@@ -525,11 +579,10 @@ mod tests {
                 end if
         ";
         compile(source, COMMANDS, PARSERS).unwrap_err();
-        // TODO: need to verify errors - this test is actually producing the wrong error
     }
 
     #[test]
-    fn end_if_before_end_event() {
+    fn event_before_end_if() {
         let source = "
                 if no_no_no = 999
             event this_be_error

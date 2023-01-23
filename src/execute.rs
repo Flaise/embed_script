@@ -14,13 +14,13 @@ pub struct Instruction {
 pub const OP_DONE: u8 = 1;
 /// R(A) <- R(B)
 pub const OP_MOVE: u8 = 2;
-/// if R(B) == R(C) then jump A
+/// if R(B) == R(C) then pc += A
 pub const OP_INT_EQ: u8 = 3;
-/// if R(B) <= R(C) then jump A
+/// if R(B) <= R(C) then pc += A
 pub const OP_INT_LE: u8 = 4;
-/// if R(B) < R(C) then jump A
+/// if R(B) < R(C) then pc += A
 pub const OP_INT_LT: u8 = 5;
-/// if R(B) != R(C) then jump A
+/// if R(B) != R(C) then pc += A
 pub const OP_INT_NE: u8 = 6;
 /// R(A) <- R(B) + R(C)
 pub const OP_INT_ADD: u8 = 7;
