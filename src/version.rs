@@ -32,7 +32,7 @@ pub fn compile_with_version(source: &str, commands: Commands, parsers: Parsers)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::execute::{Instruction, OP_DONE, OP_MOVE};
+    use crate::instruction::{OP_MOVE, OP_DONE, Instruction};
     use crate::parameter::parse_set;
 
     #[test]

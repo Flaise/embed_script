@@ -2,10 +2,12 @@ use std::fs::read_to_string;
 use std::io::{stdin, BufRead, stdout, Write};
 use std::process::exit;
 use std::str::from_utf8;
+use std::time::Instant;
 use scripting::compile::{Commands, Parsers, Compilation};
-use scripting::execute::{Instruction, Actor, OP_OUTBOX_TAGGED, execute_at, execute_event};
+use scripting::execute::{Actor, execute_at, execute_event};
+use scripting::instruction::{Instruction, OP_OUTBOX_TAGGED};
 use scripting::outbox::read_outbox;
-use scripting::parameter::{parse_if, parse_end_if, parse_set, parse_event, parse_end_event};
+use scripting::parameter::{parse_if, parse_end_if, parse_set, parse_event, parse_end_event, parse_else};
 use scripting::token::Tokenizer;
 use scripting::version::compile_with_version;
 
@@ -34,6 +36,7 @@ const COMMANDS: Commands = &[
     "end event",
     "print",
     "option",
+    "else",
 ];
 
 const PARSERS: Parsers = &[
@@ -44,6 +47,7 @@ const PARSERS: Parsers = &[
     parse_end_event,
     parse_print,
     parse_option,
+    parse_else,
 ];
 
 const TAG_PRINT: u8 = 1;
@@ -134,7 +138,7 @@ fn process_outbox(actor: &Actor) -> Vec<u8> {
     }
 
     loop {
-        print!("\ninput selection (Q to quit) > ");
+        print!("\nInput selection (Q to quit) > ");
         stdout().flush().unwrap();
 
         let read = stdin();
@@ -163,8 +167,16 @@ fn process_outbox(actor: &Actor) -> Vec<u8> {
 }
 
 fn main() {
+
+    let started = Instant::now();
+
     let bytes = read_file();
     let mut compilation = compile_with_version(&bytes, COMMANDS, PARSERS).unwrap();
+
+    if let Some(elapsed) = Instant::now().checked_duration_since(started) {
+        println!("script compiled in {:?}", elapsed);
+    }
+
 
     // Uncomment to see constant strings.
     // println!("--- len={}", compilation.other_bytes.len());
