@@ -116,15 +116,17 @@ impl<'a> Tokenizer<'a> {
         Ok(())
     }
 
-    pub fn remainder(&self) -> &[u8] {
-        self.source
+    pub fn remainder(&mut self) -> &[u8] {
+        let result = self.source;
+        self.source = Default::default();
+        result
     }
 
-    pub fn expect_remainder(&self) -> Result<&[u8], &'static str> {
+    pub fn expect_remainder(&mut self) -> Result<&[u8], &'static str> {
         if self.source.len() == 0 {
             return Err("expected parameters, not end of command");
         }
-        Ok(self.source)
+        Ok(self.remainder())
     }
 
     pub fn next(&mut self) -> Token<'a> {
@@ -736,6 +738,7 @@ mod tests {
         let mut tokenizer = tokenize("one two");
         assert_eq!(tokenizer.next(), Token::Identifier("one"));
         assert_eq!(tokenizer.remainder(), b"two");
+        tokenizer.expect_end_of_input().unwrap();
     }
 
     #[test]
@@ -743,6 +746,7 @@ mod tests {
         let mut tokenizer = tokenize("one  two");
         assert_eq!(tokenizer.next(), Token::Identifier("one"));
         assert_eq!(tokenizer.remainder(), b" two");
+        tokenizer.expect_end_of_input().unwrap();
     }
 
     #[test]
@@ -763,5 +767,19 @@ mod tests {
 
         let mut tok = tokenize("1invalid");
         assert!(tok.expect_end_of_input().is_err());
+    }
+
+    #[test]
+    fn need_any_bytes() {
+        let mut tok = tokenize("");
+        tok.expect_remainder().unwrap_err();
+
+        let mut tok = tokenize("r");
+        tok.remainder();
+        tok.expect_remainder().unwrap_err();
+
+        let mut tok = tokenize("r");
+        tok.expect_remainder().unwrap();
+        tok.expect_remainder().unwrap_err();
     }
 }

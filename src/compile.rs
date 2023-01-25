@@ -508,7 +508,7 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
 
     loop {
         if compilation.next_instruction != 0 && script.source.len() >= prev_len {
-            return Err("internal error: no bytes processed");
+            return Err("internal compiler error: no bytes processed");
         }
         prev_len = script.source.len();
 
@@ -519,8 +519,9 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
                 if let Some(parser) = parsers.get(op.command_index) {
                     let mut tok = tokenize(op.parameters);
                     parser(&mut tok, &mut compilation)?;
+                    tok.expect_end_of_input()?;
                 } else {
-                    return Err("internal error: invalid command index");
+                    return Err("internal compiler error: invalid command index");
                 }
             }
             ScanOp::Done => {
