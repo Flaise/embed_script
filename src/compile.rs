@@ -83,9 +83,10 @@ pub struct Compilation {
     pub next_register: usize,
     pub next_name: usize,
     pub next_byte: usize,
-
     instructions: [Instruction; 1024],
     pub next_instruction: usize,
+    depth: [u8; 1024],
+    pub current_depth: u8,
 }
 
 impl Default for Compilation {
@@ -100,6 +101,8 @@ impl Default for Compilation {
             next_byte: 0,
             instructions: [Instruction::default(); 1024],
             next_instruction: 0,
+            depth: [0; 1024],
+            current_depth: 0,
         }
     }
 }
@@ -109,6 +112,22 @@ fn into_inst_index(index: usize) -> Result<u8, &'static str> {
 }
 
 impl Compilation {
+
+    pub fn nesting_depth_at(&self, index: usize) -> Option<u8> {
+        if index >= self.next_instruction {
+            return None;
+        }
+        Some(self.depth[index])
+    }
+
+    pub fn increase_nesting(&mut self) {
+        self.current_depth += 1;
+    }
+
+    pub fn decrease_nesting(&mut self) {
+        debug_assert!(self.current_depth > 0, "current nesting depth is already 0");
+        self.current_depth -= 1;
+    }
 
     pub fn pick_outbox(&mut self) -> &mut [u8] {
         &mut self.other_bytes[self.next_byte..]
@@ -134,6 +153,10 @@ impl Compilation {
             }
         }
         &self.instructions[..self.next_instruction]
+    }
+
+    pub fn pick_depth(&self) -> &[u8] {
+        &self.depth[..self.next_instruction]
     }
 
     pub fn pick_instructions(&self) -> &[Instruction] {
@@ -251,6 +274,13 @@ impl Compilation {
         self.next_name += 1;
 
         Ok(())
+    }
+
+    pub fn is_event_usize(&self, offset: usize) -> bool {
+        if offset > MAX_EVENT as usize {
+            return false;
+        }
+        self.is_event(offset as u16)
     }
 
     pub fn is_event(&self, offset: u16) -> bool {
@@ -418,6 +448,7 @@ impl Compilation {
             return Err("too many bytecode instructions");
         }
         self.instructions[self.next_instruction] = instruction;
+        self.depth[self.next_instruction] = self.current_depth;
         self.next_instruction += 1;
         Ok(())
     }
@@ -516,6 +547,7 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::instruction::{OP_INT_NE, OP_MOVE};
     use crate::typing::register_to_range;
 
     const COMMANDS: Commands = &[
@@ -712,6 +744,21 @@ mod tests {
         assert_eq!(wr.last_instruction(), Some(&Instruction {opcode: 1, reg_a: 2, reg_b: 3, reg_c: 4}));
         wr.write_instruction(Instruction {opcode: 5, reg_a: 6, reg_b: 3, reg_c: 4}).unwrap();
         assert_eq!(wr.last_instruction(), Some(&Instruction {opcode: 5, reg_a: 6, reg_b: 3, reg_c: 4}));
+    }
+
+    #[test]
+    fn track_nesting_depth() {
+        let mut wr = Compilation::default();
+
+        wr.write_instruction(Instruction {opcode: OP_INT_NE, reg_a: 0, reg_b: 0, reg_c: 0}).unwrap();
+        wr.increase_nesting();
+        wr.write_instruction(Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 0, reg_c: 0}).unwrap();
+        wr.decrease_nesting();
+        wr.write_instruction(Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 0, reg_c: 0}).unwrap();
+
+        assert_eq!(wr.nesting_depth_at(0), Some(0));
+        assert_eq!(wr.nesting_depth_at(1), Some(1));
+        assert_eq!(wr.nesting_depth_at(2), Some(0));
     }
 
 }
