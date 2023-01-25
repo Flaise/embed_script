@@ -1,5 +1,6 @@
 #![no_std]
 
+pub mod command_branch;
 pub mod compile;
 pub mod execute;
 pub mod instruction;
