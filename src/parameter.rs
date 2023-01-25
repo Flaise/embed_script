@@ -115,19 +115,37 @@ fn is_branch_opcode(opcode: u8) -> bool {
 }
 
 fn connect_if(compilation: &mut Compilation) -> Result<(), &'static str> {
-    for dist in 1..=compilation.next_instruction {
-        let current_index = compilation.next_instruction - dist;
+    let depth = compilation.current_depth;
+
+    for dist in 0..compilation.next_instruction {
+        let current_index = compilation.next_instruction - dist - 1;
+
+        let found_depth = if let Some(d) = compilation.nesting_depth_at(current_index) {
+            d
+        } else {
+            return Err("internal compiler error");
+        };
+
         let instructions = compilation.pick_instructions_mut();
         let current = &mut instructions[current_index];
 
         if is_branch_opcode(current.opcode) {
-            if current.reg_a == 0 {
-                let dist = dist - 1;
-                if dist > u8::MAX as usize {
-                    return Err("too many instructions in branch");
-                }
-                current.reg_a = dist as u8;
+            if found_depth >= depth {
+                continue;
             }
+            if found_depth + 1 != depth {
+                return Err("nesting error");
+            }
+
+            if current.reg_a != 0 {
+                // the else command already connected the branch instruction
+                return Ok(());
+            }
+
+            if dist > u8::MAX as usize {
+                return Err("too many instructions in branch");
+            }
+            current.reg_a = dist as u8;
             return Ok(());
         }
 
@@ -139,14 +157,14 @@ fn connect_if(compilation: &mut Compilation) -> Result<(), &'static str> {
             return Err("end if without if (found start of event)");
         }
     }
-    Ok(())
+    Err("no branch found")
 }
 
 fn connect_jumps(compilation: &mut Compilation) -> Result<(), &'static str> {
     let depth = compilation.current_depth;
 
-    for dist in 1..=compilation.next_instruction {
-        let current_index = compilation.next_instruction - dist;
+    for dist in 0..compilation.next_instruction {
+        let current_index = compilation.next_instruction - dist - 1;
 
         let found_depth = if let Some(d) = compilation.nesting_depth_at(current_index) {
             d
@@ -157,16 +175,11 @@ fn connect_jumps(compilation: &mut Compilation) -> Result<(), &'static str> {
         if found_depth + 1 < depth {
             break;
         }
-        // TODO
-        // if found_depth > depth {
-        //     continue;
-        // }
 
         let instructions = compilation.pick_instructions_mut();
         let current = &mut instructions[current_index];
 
         if current.opcode == OP_JUMP {
-            let dist = dist - 1;
             if dist > u8::MAX as usize {
                 return Err("too many instructions in branch");
             }
@@ -843,6 +856,79 @@ mod tests {
         let mut comp = compile(source, COMMANDS, PARSERS).unwrap();
         execute(&mut comp.as_actor()).unwrap();
         assert_eq!(comp.register_value_by_name(b"thing"), Some(8000));
+    }
+
+    #[test]
+    fn more_nesting() {
+        let source = "
+            set thing: 2000
+            if thing != 2001
+                set thing: 7000
+                if thing != 2001
+                    set thing: 9000
+                else
+                    set thing: 8000
+                end if
+            else
+                if thing != 2000
+                    set thing: 9000
+                else
+                    set thing: 8000
+                end if
+            end if
+        ";
+
+        let mut comp = compile(source, COMMANDS, PARSERS).unwrap();
+        assert_eq!(comp.pick_registers(), &[0, 2000, 2001, 7000, 9000, 8000]);
+        assert_eq!(comp.pick_depth(), &[
+            0,
+            0,
+            1,
+
+            1,
+            2,
+            2,
+
+            2,
+
+            1,
+
+            1,
+            2,
+            2,
+
+            2,
+
+            0,
+        ]);
+        assert_eq!(comp.pick_instructions(), &[
+            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0}, // set thing: 2000
+            Instruction {opcode: OP_INT_EQ, reg_a: 6, reg_b: 0, reg_c: 2}, // if thing != 2001
+            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 3, reg_c: 0}, // set thing: 7000
+
+            Instruction {opcode: OP_INT_EQ, reg_a: 2, reg_b: 0, reg_c: 2}, // if thing != 2001
+            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 4, reg_c: 0}, // set thing: 9000
+
+            Instruction {opcode: OP_JUMP, reg_a: 6, reg_b: 0, reg_c: 0},
+            // else
+            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 5, reg_c: 0}, // set thing: 8000
+            // end if
+
+            Instruction {opcode: OP_JUMP, reg_a: 4, reg_b: 0, reg_c: 0},
+            // else
+            Instruction {opcode: OP_INT_EQ, reg_a: 2, reg_b: 0, reg_c: 1}, // if thing != 2000
+            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 4, reg_c: 0}, // set thing: 9000
+
+            Instruction {opcode: OP_JUMP, reg_a: 1, reg_b: 0, reg_c: 0},
+            // else
+            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 5, reg_c: 0}, // set thing: 8000
+            // end if
+            // end if
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+        ]);
+
+        execute(&mut comp.as_actor()).unwrap();
+        assert_eq!(comp.register_value_by_name(b"thing"), Some(9000));
     }
 
     #[test]
