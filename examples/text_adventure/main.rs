@@ -2,6 +2,7 @@ use std::fs::read_to_string;
 use std::io::{stdin, BufRead, stdout, Write};
 use std::process::exit;
 use std::str::from_utf8;
+use std::time::Instant;
 use scripting::compile::{Commands, Parsers, Compilation};
 use scripting::execute::{Actor, execute_at, execute_event};
 use scripting::instruction::{Instruction, OP_OUTBOX_TAGGED};
@@ -137,7 +138,7 @@ fn process_outbox(actor: &Actor) -> Vec<u8> {
     }
 
     loop {
-        print!("\ninput selection (Q to quit) > ");
+        print!("\nInput selection (Q to quit) > ");
         stdout().flush().unwrap();
 
         let read = stdin();
@@ -166,8 +167,16 @@ fn process_outbox(actor: &Actor) -> Vec<u8> {
 }
 
 fn main() {
+
+    let started = Instant::now();
+
     let bytes = read_file();
     let mut compilation = compile_with_version(&bytes, COMMANDS, PARSERS).unwrap();
+
+    if let Some(elapsed) = Instant::now().checked_duration_since(started) {
+        println!("script compiled in {:?}", elapsed);
+    }
+
 
     // Uncomment to see constant strings.
     // println!("--- len={}", compilation.other_bytes.len());
