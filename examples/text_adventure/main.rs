@@ -9,7 +9,7 @@ use scripting::compile::{Commands, Parsers, Compilation};
 use scripting::execute::{Actor, execute_at, execute_event};
 use scripting::instruction::{Instruction, OP_OUTBOX_TAGGED};
 use scripting::outbox::read_outbox;
-use scripting::parameter::{parse_set, parse_event, parse_end_event, parse_invoke};
+use scripting::command::{parse_set, parse_event, parse_end_event, parse_invoke};
 use scripting::token::Tokenizer;
 use scripting::version::compile_with_version;
 
@@ -70,7 +70,7 @@ fn parse_print(tokenizer: &mut Tokenizer, compilation: &mut Compilation)
         compilation.write_bytes_and_register(message)?
     };
 
-    compilation.write_instruction(Instruction {opcode: OP_OUTBOX_TAGGED, reg_a: id, reg_b: TAG_PRINT, reg_c: 0})
+    compilation.write_instruction(Instruction {opcode: OP_OUTBOX_TAGGED, a: id, b: TAG_PRINT, c: 0})
 }
 
 fn parse_option(tokenizer: &mut Tokenizer, compilation: &mut Compilation)
@@ -84,8 +84,8 @@ fn parse_option(tokenizer: &mut Tokenizer, compilation: &mut Compilation)
     let name_id = compilation.write_bytes_and_register(event_name)?;
     let text_id = compilation.write_bytes_and_register(text)?;
 
-    compilation.write_instruction(Instruction {opcode: OP_OUTBOX_TAGGED, reg_a: name_id, reg_b: TAG_OPTION_EVENT, reg_c: 0})?;
-    compilation.write_instruction(Instruction {opcode: OP_OUTBOX_TAGGED, reg_a: text_id, reg_b: TAG_OPTION_TEXT, reg_c: 0})
+    compilation.write_instruction(Instruction {opcode: OP_OUTBOX_TAGGED, a: name_id, b: TAG_OPTION_EVENT, c: 0})?;
+    compilation.write_instruction(Instruction {opcode: OP_OUTBOX_TAGGED, a: text_id, b: TAG_OPTION_TEXT, c: 0})
 }
 
 struct Option {

@@ -51,7 +51,7 @@ pub fn parse_set(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(
         Token::Done => {
             match_register_types(compilation, &[dest, b])?;
 
-            return compilation.write_instruction(Instruction {opcode: OP_MOVE, reg_a: dest, reg_b: b, reg_c: 0});
+            return compilation.write_instruction(Instruction {opcode: OP_MOVE, a: dest, b, c: 0});
         }
         Token::Err(()) => {
             return Err("unknown error");
@@ -62,7 +62,7 @@ pub fn parse_set(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(
     tok.expect_end_of_input()?;
 
     match_register_types(compilation, &[dest, b, c])?;
-    compilation.write_instruction(Instruction {opcode: op, reg_a: dest, reg_b: b, reg_c: c})
+    compilation.write_instruction(Instruction {opcode: op, a: dest, b, c})
 }
 
 pub fn parse_event(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
@@ -93,14 +93,14 @@ fn write_done(compilation: &mut Compilation) -> Result<(), &'static str> {
             return Ok(());
         }
     }
-    compilation.write_instruction(Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0})
+    compilation.write_instruction(Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0})
 }
 
 pub fn parse_end_event(tok: &mut Tokenizer, compilation: &mut Compilation)
 -> Result<(), &'static str> {
     tok.expect_end_of_input()?;
     compilation.decrease_nesting();
-    compilation.write_instruction(Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0})
+    compilation.write_instruction(Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0})
     // write_done(instructions) // this would only serve as an optimization for an empty event
 }
 
@@ -121,8 +121,8 @@ fn connect_invoke(compilation: &mut Compilation, name: &[u8], new_offset: u16) -
 
     for index in update {
         let instruction = &mut compilation.pick_instructions_mut()[index];
-        instruction.reg_a = a;
-        instruction.reg_b = b;
+        instruction.a = a;
+        instruction.b = b;
     }
 
     Ok(())
@@ -142,7 +142,7 @@ pub fn parse_invoke(tok: &mut Tokenizer, compilation: &mut Compilation) -> Resul
         0
     };
     let [a, b] = location.to_be_bytes();
-    compilation.write_instruction(Instruction {opcode: OP_INVOKE, reg_a: a, reg_b: b, reg_c: 0})
+    compilation.write_instruction(Instruction {opcode: OP_INVOKE, a, b, c: 0})
 }
 
 #[cfg(test)]
@@ -151,7 +151,7 @@ mod tests {
     use crate::command_branch::{parse_else_if, parse_else, parse_if, parse_end_if};
     use crate::compile::{compile, execute_compilation, Commands, Parsers};
     use crate::execute::execute_event;
-    use crate::parameter::parse_set;
+    use crate::command::parse_set;
     use crate::typing::{float_to_register, int_to_register};
 
     const COMMANDS: Commands = &[
@@ -180,7 +180,7 @@ mod tests {
         let comp = compile("set r: 7", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..2], &[0, 7]);
-        assert_eq!(comp.pick_instructions()[0], Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0});
+        assert_eq!(comp.pick_instructions()[0], Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0});
     }
 
     #[test]
@@ -188,7 +188,7 @@ mod tests {
         let comp = compile("set h: 6", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..2], &[0, 6]);
-        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0}]);
+        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0}]);
     }
 
     #[test]
@@ -197,8 +197,8 @@ mod tests {
 
         assert_eq!(&comp.registers[0..3], &[0, 5, 0]);
         assert_eq!(comp.active_instructions(), &[
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-            Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 1, reg_c: 0},
+            Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0},
+            Instruction {opcode: OP_MOVE, a: 2, b: 1, c: 0},
         ]);
     }
 
@@ -210,8 +210,8 @@ mod tests {
 
         assert_eq!(&comp.registers[0..4], &[0, float_5_as_reg, 0, float_5_as_reg]);
         assert_eq!(comp.active_instructions(), &[
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-            Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 3, reg_c: 0},
+            Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0},
+            Instruction {opcode: OP_MOVE, a: 2, b: 3, c: 0},
         ]);
     }
 
@@ -221,8 +221,8 @@ mod tests {
 
         assert_eq!(&comp.registers[0..3], &[0, 5, 7]);
         assert_eq!(comp.active_instructions(), &[
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
+            Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0},
+            Instruction {opcode: OP_MOVE, a: 0, b: 2, c: 0},
         ]);
     }
 
@@ -231,7 +231,7 @@ mod tests {
         let comp = compile("set r: a + 7", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..3], &[0, 0, 7]);
-        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_ADD, reg_a: 0, reg_b: 1, reg_c: 2}]);
+        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_ADD, a: 0, b: 1, c: 2}]);
     }
 
     #[test]
@@ -239,7 +239,7 @@ mod tests {
         let comp = compile("set r: a + -3", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..3], &[0, 0, int_to_register(-3)]);
-        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_ADD, reg_a: 0, reg_b: 1, reg_c: 2}]);
+        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_ADD, a: 0, b: 1, c: 2}]);
     }
 
     #[test]
@@ -247,7 +247,7 @@ mod tests {
         let comp = compile("set r: a - 7", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..3], &[0, 0, 7]);
-        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_SUB, reg_a: 0, reg_b: 1, reg_c: 2}]);
+        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_SUB, a: 0, b: 1, c: 2}]);
     }
 
     #[test]
@@ -255,7 +255,7 @@ mod tests {
         let comp = compile("set r: a * 7", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(comp.pick_registers(), &[0, 0, 7]);
-        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_MUL, reg_a: 0, reg_b: 1, reg_c: 2}]);
+        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_MUL, a: 0, b: 1, c: 2}]);
     }
 
     #[test]
@@ -263,7 +263,7 @@ mod tests {
         let comp = compile("set r: a / 7", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(comp.pick_registers(), &[0, 0, 7]);
-        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_DIV, reg_a: 0, reg_b: 1, reg_c: 2}]);
+        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_DIV, a: 0, b: 1, c: 2}]);
     }
 
     #[test]
@@ -289,7 +289,7 @@ mod tests {
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(comp.pick_instructions()[0], Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0});
+        assert_eq!(comp.pick_instructions()[0], Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0});
 
         // optimization could make this return Some(0)
         assert_eq!(comp.event_by_name(b"do_something"), Some(1));
@@ -307,10 +307,10 @@ mod tests {
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-            Instruction {opcode: OP_INVOKE, reg_a: 0, reg_b: 1, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
+            Instruction {opcode: OP_INVOKE, a: 0, b: 1, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
 
         assert_eq!(comp.event_by_name(b"do_something"), Some(1));
@@ -327,9 +327,9 @@ mod tests {
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_INVOKE, reg_a: 0, reg_b: 2, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_INVOKE, a: 0, b: 2, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
         assert_eq!(comp.event_by_name(b"do_something"), Some(2));
     }
@@ -354,9 +354,9 @@ mod tests {
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
+            Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
         assert_eq!(comp.event_by_name(b"do_something"), Some(1));
         assert_eq!(comp.register_by_name(b"something_else"), Some(0));
@@ -373,10 +373,10 @@ mod tests {
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-            Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 3, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
+            Instruction {opcode: OP_MOVE, a: 2, b: 3, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
         assert_eq!(comp.nesting_depth_at(0), Some(0));
         assert_eq!(comp.nesting_depth_at(1), Some(0));

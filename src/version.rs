@@ -33,7 +33,7 @@ pub fn compile_with_version(source: &str, commands: Commands, parsers: Parsers)
 mod tests {
     use super::*;
     use crate::instruction::{OP_MOVE, OP_DONE, Instruction};
-    use crate::parameter::parse_set;
+    use crate::command::parse_set;
 
     #[test]
     fn version_parse() {
@@ -87,8 +87,8 @@ mod tests {
     fn compilation_success() {
         let comp = compile_with_version("version 1\nset r: 2", COMMANDS, PARSERS).unwrap();
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
     }
 

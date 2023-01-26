@@ -540,9 +540,9 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
                     if compilation.last_instruction().map(|inst| inst.opcode == OP_DONE) != Some(true) {
                         compilation.write_instruction(Instruction {
                             opcode: OP_DONE,
-                            reg_a: 0,
-                            reg_b: 0,
-                            reg_c: 0,
+                            a: 0,
+                            b: 0,
+                            c: 0,
                         })?;
                     }
                     debug_assert_eq!(compilation.last_instruction().unwrap().opcode, OP_DONE);
@@ -582,7 +582,7 @@ mod tests {
     fn empty_termination() {
         let compilation = compile("\t \n\t ", COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(compilation.instructions[0], Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0});
+        assert_eq!(compilation.instructions[0], Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0});
     }
 
     #[test]
@@ -752,21 +752,21 @@ mod tests {
     fn termination() {
         let mut wr = Compilation::default();
         assert_eq!(wr.last_instruction(), None);
-        wr.write_instruction(Instruction {opcode: 1, reg_a: 2, reg_b: 3, reg_c: 4}).unwrap();
-        assert_eq!(wr.last_instruction(), Some(&Instruction {opcode: 1, reg_a: 2, reg_b: 3, reg_c: 4}));
-        wr.write_instruction(Instruction {opcode: 5, reg_a: 6, reg_b: 3, reg_c: 4}).unwrap();
-        assert_eq!(wr.last_instruction(), Some(&Instruction {opcode: 5, reg_a: 6, reg_b: 3, reg_c: 4}));
+        wr.write_instruction(Instruction {opcode: 1, a: 2, b: 3, c: 4}).unwrap();
+        assert_eq!(wr.last_instruction(), Some(&Instruction {opcode: 1, a: 2, b: 3, c: 4}));
+        wr.write_instruction(Instruction {opcode: 5, a: 6, b: 3, c: 4}).unwrap();
+        assert_eq!(wr.last_instruction(), Some(&Instruction {opcode: 5, a: 6, b: 3, c: 4}));
     }
 
     #[test]
     fn track_nesting_depth() {
         let mut wr = Compilation::default();
 
-        wr.write_instruction(Instruction {opcode: OP_INT_NE, reg_a: 0, reg_b: 0, reg_c: 0}).unwrap();
+        wr.write_instruction(Instruction {opcode: OP_INT_NE, a: 0, b: 0, c: 0}).unwrap();
         wr.increase_nesting();
-        wr.write_instruction(Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 0, reg_c: 0}).unwrap();
+        wr.write_instruction(Instruction {opcode: OP_MOVE, a: 0, b: 0, c: 0}).unwrap();
         wr.decrease_nesting();
-        wr.write_instruction(Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 0, reg_c: 0}).unwrap();
+        wr.write_instruction(Instruction {opcode: OP_MOVE, a: 0, b: 0, c: 0}).unwrap();
 
         assert_eq!(wr.nesting_depth_at(0), Some(0));
         assert_eq!(wr.nesting_depth_at(1), Some(1));
