@@ -1,6 +1,6 @@
 use crate::compile::{Compilation, token_to_register_id};
 use crate::instruction::{Instruction, OP_INT_EQ, OP_INT_NE, OP_DONE, OP_JUMP};
-use crate::parameter::match_register_types;
+use crate::command::match_register_types;
 use crate::token::{Token, Tokenizer};
 
 pub fn parse_if(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
@@ -9,8 +9,8 @@ pub fn parse_if(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<()
     let op = match tok.next() {
         Token::Symbol(sym) => {
             match sym {
-                "=" => OP_INT_NE,
-                "!=" => OP_INT_EQ,
+                b"=" => OP_INT_NE,
+                b"!=" => OP_INT_EQ,
                 _ => return Err("unknown operator"),
             }
         }
@@ -42,7 +42,7 @@ pub fn parse_if(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<()
     // TODO: pick correct opcode type
 
     match_register_types(compilation, &[b, c])?;
-    compilation.write_instruction(Instruction {opcode: op, reg_a: 0, reg_b: b, reg_c: c})?;
+    compilation.write_instruction(Instruction {opcode: op, a: 0, b, c})?;
     compilation.increase_nesting();
     Ok(())
 }
@@ -57,8 +57,8 @@ fn is_branch_opcode(opcode: u8) -> bool {
 fn connect_if(compilation: &mut Compilation) -> Result<(), &'static str> {
     let depth = compilation.current_depth;
 
-    for dist in 0..compilation.next_instruction {
-        let current_index = compilation.next_instruction - dist - 1;
+    for dist in 0..compilation.next_instruction_offset() {
+        let current_index = compilation.next_instruction_offset() - dist - 1;
 
         let found_depth = if let Some(d) = compilation.nesting_depth_at(current_index) {
             d
@@ -77,7 +77,7 @@ fn connect_if(compilation: &mut Compilation) -> Result<(), &'static str> {
                 return Err("nesting error");
             }
 
-            if current.reg_a != 0 {
+            if current.a != 0 {
                 // the else command already connected the branch instruction
                 return Ok(());
             }
@@ -85,7 +85,7 @@ fn connect_if(compilation: &mut Compilation) -> Result<(), &'static str> {
             if dist > u8::MAX as usize {
                 return Err("too many instructions in branch");
             }
-            current.reg_a = dist as u8;
+            current.a = dist as u8;
             return Ok(());
         }
 
@@ -103,8 +103,8 @@ fn connect_if(compilation: &mut Compilation) -> Result<(), &'static str> {
 fn connect_jumps(compilation: &mut Compilation) -> Result<(), &'static str> {
     let depth = compilation.current_depth;
 
-    for dist in 0..compilation.next_instruction {
-        let current_index = compilation.next_instruction - dist - 1;
+    for dist in 0..compilation.next_instruction_offset() {
+        let current_index = compilation.next_instruction_offset() - dist - 1;
 
         let found_depth = if let Some(d) = compilation.nesting_depth_at(current_index) {
             d
@@ -123,7 +123,7 @@ fn connect_jumps(compilation: &mut Compilation) -> Result<(), &'static str> {
             if dist > u8::MAX as usize {
                 return Err("too many instructions in branch");
             }
-            current.reg_a = dist as u8;
+            current.a = dist as u8;
         }
     }
     Ok(())
@@ -142,12 +142,12 @@ pub fn parse_end_if(tok: &mut Tokenizer, compilation: &mut Compilation) -> Resul
 pub fn parse_else(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
     tok.expect_end_of_input()?;
 
-    compilation.write_instruction(Instruction {opcode: OP_JUMP, reg_a: 0, reg_b: 0, reg_c: 0})?;
+    compilation.write_instruction(Instruction {opcode: OP_JUMP, a: 0, b: 0, c: 0})?;
     connect_if(compilation)
 }
 
 pub fn parse_else_if(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
-    compilation.write_instruction(Instruction {opcode: OP_JUMP, reg_a: 0, reg_b: 0, reg_c: 0})?;
+    compilation.write_instruction(Instruction {opcode: OP_JUMP, a: 0, b: 0, c: 0})?;
     connect_if(compilation)?;
     compilation.decrease_nesting();
 
@@ -160,16 +160,16 @@ mod tests {
     use crate::compile::{compile, execute_compilation, Commands, Parsers};
     use crate::execute::execute;
     use crate::instruction::OP_MOVE;
-    use crate::parameter::{parse_set, parse_event, parse_end_event};
+    use crate::command::{parse_set, parse_event, parse_end_event};
 
     const COMMANDS: Commands = &[
-        "if",
-        "end if",
-        "set",
-        "event",
-        "end event",
-        "else if",
-        "else",
+        b"if",
+        b"end if",
+        b"set",
+        b"event",
+        b"end event",
+        b"else if",
+        b"else",
     ];
     const PARSERS: Parsers = &[
         parse_if,
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn if_equal() {
-        let source = "
+        let source = b"
             if r = 20
                 set r: 5
             end if
@@ -192,9 +192,9 @@ mod tests {
 
         assert_eq!(&comp.registers[0..3], &[0, 20, 5]);
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_INT_NE, reg_a: 1, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_INT_NE, a: 1, b: 0, c: 1},
+            Instruction {opcode: OP_MOVE, a: 0, b: 2, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
         assert_eq!(comp.nesting_depth_at(0), Some(0));
         assert_eq!(comp.nesting_depth_at(1), Some(1));
@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn if_equal_assignment() {
-        let source = "
+        let source = b"
             set r: 20
 
             if r = 20
@@ -226,16 +226,16 @@ mod tests {
 
     #[test]
     fn empty_if() {
-        let source = "
+        let source = b"
             if r = 20
             end if
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(&comp.registers[0..3], &[0, 20, 0]);
+        assert_eq!(comp.registers.as_ref(), &[0, 20]);
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_INT_NE, reg_a: 0, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_INT_NE, a: 0, b: 0, c: 1},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
         assert_eq!(comp.nesting_depth_at(0), Some(0));
         assert_eq!(comp.nesting_depth_at(1), Some(0));
@@ -243,22 +243,22 @@ mod tests {
 
     #[test]
     fn empty_if_not_equal() {
-        let source = "
+        let source = b"
             if r != 10
             end if
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(&comp.registers[0..3], &[0, 10, 0]);
+        assert_eq!(comp.registers.as_ref(), &[0, 10]);
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_INT_EQ, a: 0, b: 0, c: 1},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
     }
 
     #[test]
     fn two_empty_ifs() {
-        let source = "
+        let source = b"
             if r != 10
             end if
             if r = 10
@@ -266,11 +266,11 @@ mod tests {
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(&comp.registers[0..3], &[0, 10, 0]);
+        assert_eq!(comp.registers.as_ref(), &[0, 10]);
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_INT_NE, reg_a: 0, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_INT_EQ, a: 0, b: 0, c: 1},
+            Instruction {opcode: OP_INT_NE, a: 0, b: 0, c: 1},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
         assert_eq!(comp.nesting_depth_at(0), Some(0));
         assert_eq!(comp.nesting_depth_at(1), Some(0));
@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn two_empty_ifs_in_event() {
-        let source = "
+        let source = b"
             event yeah
                 if r != 10
                 end if
@@ -289,14 +289,14 @@ mod tests {
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(&comp.registers[0..3], &[0, 10, 0]);
+        assert_eq!(comp.registers.as_ref(), &[0, 10]);
         assert_eq!(comp.pick_instructions(), &[
             // separates top scope from event
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
 
-            Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_INT_NE, reg_a: 0, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_INT_EQ, a: 0, b: 0, c: 1},
+            Instruction {opcode: OP_INT_NE, a: 0, b: 0, c: 1},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
         assert_eq!(comp.nesting_depth_at(0), Some(0));
         assert_eq!(comp.nesting_depth_at(1), Some(1));
@@ -306,24 +306,24 @@ mod tests {
 
     #[test]
     fn if_else_empty() {
-        let source = "
+        let source = b"
             if r = 10
             else
             end if
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(&comp.registers[0..3], &[0, 10, 0]);
+        assert_eq!(comp.registers.as_ref(), &[0, 10]);
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_INT_NE, reg_a: 1, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_JUMP, reg_a: 0, reg_b: 0, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_INT_NE, a: 1, b: 0, c: 1},
+            Instruction {opcode: OP_JUMP, a: 0, b: 0, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
     }
 
     #[test]
     fn if_else_set() {
-        let source = "
+        let source = b"
             if r = 10
                 set r: 11
             else
@@ -334,17 +334,17 @@ mod tests {
 
         assert_eq!(comp.pick_registers(), &[0, 10, 11, 12]);
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_INT_NE, reg_a: 2, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
-            Instruction {opcode: OP_JUMP, reg_a: 1, reg_b: 0, reg_c: 0},
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 3, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_INT_NE, a: 2, b: 0, c: 1},
+            Instruction {opcode: OP_MOVE, a: 0, b: 2, c: 0},
+            Instruction {opcode: OP_JUMP, a: 1, b: 0, c: 0},
+            Instruction {opcode: OP_MOVE, a: 0, b: 3, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
     }
 
     #[test]
     fn if_else_if_end() {
-        let source = "
+        let source = b"
             if r = 10
                 set r: 11
             else if r = 19
@@ -356,18 +356,18 @@ mod tests {
         assert_eq!(comp.pick_registers(), &[0, 10, 11, 19, 12]);
         assert_eq!(comp.pick_depth(), &[0, 1, 1, 0, 1, 0]);
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_INT_NE, reg_a: 2, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
-            Instruction {opcode: OP_JUMP, reg_a: 2, reg_b: 0, reg_c: 0},
-            Instruction {opcode: OP_INT_NE, reg_a: 1, reg_b: 0, reg_c: 3},
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 4, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_INT_NE, a: 2, b: 0, c: 1},
+            Instruction {opcode: OP_MOVE, a: 0, b: 2, c: 0},
+            Instruction {opcode: OP_JUMP, a: 2, b: 0, c: 0},
+            Instruction {opcode: OP_INT_NE, a: 1, b: 0, c: 3},
+            Instruction {opcode: OP_MOVE, a: 0, b: 4, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
     }
 
     #[test]
     fn two_else_ifs() {
-        let source = "
+        let source = b"
             if r = 10
                 set r: 11
             else if r = 11
@@ -380,24 +380,24 @@ mod tests {
 
         assert_eq!(comp.pick_registers(), &[0, 10, 11, 19, 12]);
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_INT_NE, reg_a: 2, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
-            Instruction {opcode: OP_JUMP, reg_a: 5, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_INT_NE, a: 2, b: 0, c: 1},
+            Instruction {opcode: OP_MOVE, a: 0, b: 2, c: 0},
+            Instruction {opcode: OP_JUMP, a: 5, b: 0, c: 0},
 
-            Instruction {opcode: OP_INT_NE, reg_a: 2, reg_b: 0, reg_c: 2},
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-            Instruction {opcode: OP_JUMP, reg_a: 2, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_INT_NE, a: 2, b: 0, c: 2},
+            Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0},
+            Instruction {opcode: OP_JUMP, a: 2, b: 0, c: 0},
 
-            Instruction {opcode: OP_INT_NE, reg_a: 1, reg_b: 0, reg_c: 3},
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 4, reg_c: 0},
+            Instruction {opcode: OP_INT_NE, a: 1, b: 0, c: 3},
+            Instruction {opcode: OP_MOVE, a: 0, b: 4, c: 0},
 
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
     }
 
     #[test]
     fn if_inside_event_ok() {
-        let source = "
+        let source = b"
             event something
                 if omg = 999
                     set omg: 10000
@@ -406,16 +406,16 @@ mod tests {
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-            Instruction {opcode: OP_INT_NE, reg_a: 1, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
+            Instruction {opcode: OP_INT_NE, a: 1, b: 0, c: 1},
+            Instruction {opcode: OP_MOVE, a: 0, b: 2, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
     }
 
     #[test]
     fn else_inside_event_ok() {
-        let source = "
+        let source = b"
             event something
                 if omg = 999
                     set omg: 10000
@@ -426,18 +426,18 @@ mod tests {
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-            Instruction {opcode: OP_INT_NE, reg_a: 2, reg_b: 0, reg_c: 1},
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
-            Instruction {opcode: OP_JUMP, reg_a: 1, reg_b: 0, reg_c: 0},
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 3, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
+            Instruction {opcode: OP_INT_NE, a: 2, b: 0, c: 1},
+            Instruction {opcode: OP_MOVE, a: 0, b: 2, c: 0},
+            Instruction {opcode: OP_JUMP, a: 1, b: 0, c: 0},
+            Instruction {opcode: OP_MOVE, a: 0, b: 3, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
     }
 
     #[test]
     fn no_event_inside_if() {
-        let source = "
+        let source = b"
             if dont_do_this = 999
                 event this_bad
                     set omg: 10000
@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     fn end_event_before_end_if() {
-        let source = "
+        let source = b"
             event this_also_bad
                 if no_no_no = 999
                     set omg: 10000
@@ -461,7 +461,7 @@ mod tests {
 
     #[test]
     fn event_before_end_if() {
-        let source = "
+        let source = b"
                 if no_no_no = 999
             event this_be_error
                     set omg: 10000
@@ -473,7 +473,7 @@ mod tests {
 
     #[test]
     fn nested_if_blocks() {
-        let source = "
+        let source = b"
             set thing: 2000
             if thing = 2001
                 set thing: 7000
@@ -491,7 +491,7 @@ mod tests {
 
     #[test]
     fn nested_else_blocks() {
-        let source = "
+        let source = b"
             set thing: 2000
             if thing = 2001
                 set thing: 7000
@@ -511,7 +511,7 @@ mod tests {
 
     #[test]
     fn more_nesting() {
-        let source = "
+        let source = b"
             set thing: 2000
             if thing != 2001
                 set thing: 7000
@@ -553,29 +553,29 @@ mod tests {
             0,
         ]);
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0}, // set thing: 2000
-            Instruction {opcode: OP_INT_EQ, reg_a: 6, reg_b: 0, reg_c: 2}, // if thing != 2001
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 3, reg_c: 0}, // set thing: 7000
+            Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0}, // set thing: 2000
+            Instruction {opcode: OP_INT_EQ, a: 6, b: 0, c: 2}, // if thing != 2001
+            Instruction {opcode: OP_MOVE, a: 0, b: 3, c: 0}, // set thing: 7000
 
-            Instruction {opcode: OP_INT_EQ, reg_a: 2, reg_b: 0, reg_c: 2}, // if thing != 2001
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 4, reg_c: 0}, // set thing: 9000
+            Instruction {opcode: OP_INT_EQ, a: 2, b: 0, c: 2}, // if thing != 2001
+            Instruction {opcode: OP_MOVE, a: 0, b: 4, c: 0}, // set thing: 9000
 
-            Instruction {opcode: OP_JUMP, reg_a: 6, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_JUMP, a: 6, b: 0, c: 0},
             // else
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 5, reg_c: 0}, // set thing: 8000
+            Instruction {opcode: OP_MOVE, a: 0, b: 5, c: 0}, // set thing: 8000
             // end if
 
-            Instruction {opcode: OP_JUMP, reg_a: 4, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_JUMP, a: 4, b: 0, c: 0},
             // else
-            Instruction {opcode: OP_INT_EQ, reg_a: 2, reg_b: 0, reg_c: 1}, // if thing != 2000
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 4, reg_c: 0}, // set thing: 9000
+            Instruction {opcode: OP_INT_EQ, a: 2, b: 0, c: 1}, // if thing != 2000
+            Instruction {opcode: OP_MOVE, a: 0, b: 4, c: 0}, // set thing: 9000
 
-            Instruction {opcode: OP_JUMP, reg_a: 1, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_JUMP, a: 1, b: 0, c: 0},
             // else
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 5, reg_c: 0}, // set thing: 8000
+            Instruction {opcode: OP_MOVE, a: 0, b: 5, c: 0}, // set thing: 8000
             // end if
             // end if
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
 
         execute(&mut comp.as_actor()).unwrap();
@@ -584,7 +584,7 @@ mod tests {
 
     #[test]
     fn elseiffiness() {
-        let source = "
+        let source = b"
             set thing: 2000
             if thing = 2001
                 set thing: 7000
@@ -602,7 +602,7 @@ mod tests {
 
     #[test]
     fn elseiffiness_first_branch() {
-        let source = "
+        let source = b"
             set thing: 2001
             if thing = 2001
                 set thing: 7000

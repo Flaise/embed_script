@@ -52,122 +52,122 @@ pub fn execute_at(actor: &mut Actor, location: u16) -> Result<(), &'static str> 
 
         match inst.opcode {
             OP_MOVE => {
-                let bv = actor.registers[inst.reg_b as usize];
+                let bv = actor.registers[inst.b as usize];
 
-                debug_assert_eq!(inst.reg_c, 0);
-                actor.registers[inst.reg_a as usize] = bv;
+                debug_assert_eq!(inst.c, 0);
+                actor.registers[inst.a as usize] = bv;
             }
             OP_INT_ADD => {
-                let bv = actor.registers[inst.reg_b as usize];
-                let cv = actor.registers[inst.reg_c as usize];
+                let bv = actor.registers[inst.b as usize];
+                let cv = actor.registers[inst.c as usize];
 
                 let bi = register_to_int(bv);
                 let ci = register_to_int(cv);
                 if let Some(a) = bi.checked_add(ci) {
-                    actor.registers[inst.reg_a as usize] = int_to_register(a);
+                    actor.registers[inst.a as usize] = int_to_register(a);
                 } else {
                     todo!();
                 }
             }
             OP_INT_SUB => {
-                let bv = actor.registers[inst.reg_b as usize];
-                let cv = actor.registers[inst.reg_c as usize];
+                let bv = actor.registers[inst.b as usize];
+                let cv = actor.registers[inst.c as usize];
 
                 let bi = register_to_int(bv);
                 let ci = register_to_int(cv);
                 if let Some(a) = bi.checked_sub(ci) {
-                    actor.registers[inst.reg_a as usize] = int_to_register(a);
+                    actor.registers[inst.a as usize] = int_to_register(a);
                 } else {
                     todo!();
                 }
             }
             OP_INT_MUL => {
-                let bv = actor.registers[inst.reg_b as usize];
-                let cv = actor.registers[inst.reg_c as usize];
+                let bv = actor.registers[inst.b as usize];
+                let cv = actor.registers[inst.c as usize];
 
                 let bi = register_to_int(bv);
                 let ci = register_to_int(cv);
                 if let Some(a) = bi.checked_mul(ci) {
-                    actor.registers[inst.reg_a as usize] = int_to_register(a);
+                    actor.registers[inst.a as usize] = int_to_register(a);
                 } else {
                     todo!();
                 }
             }
             OP_INT_DIV => {
-                let bv = actor.registers[inst.reg_b as usize];
-                let cv = actor.registers[inst.reg_c as usize];
+                let bv = actor.registers[inst.b as usize];
+                let cv = actor.registers[inst.c as usize];
 
                 let bi = register_to_int(bv);
                 let ci = register_to_int(cv);
                 if let Some(a) = bi.checked_div(ci) {
-                    actor.registers[inst.reg_a as usize] = int_to_register(a);
+                    actor.registers[inst.a as usize] = int_to_register(a);
                 } else {
                     todo!();
                 }
             }
             OP_INT_EQ => {
-                let bv = actor.registers[inst.reg_b as usize];
-                let cv = actor.registers[inst.reg_c as usize];
+                let bv = actor.registers[inst.b as usize];
+                let cv = actor.registers[inst.c as usize];
 
-                validate_branch(actor.instructions.len(), counter, inst.reg_a)?;
+                validate_branch(actor.instructions.len(), counter, inst.a)?;
                 if bv == cv {
-                    counter += inst.reg_a as usize;
+                    counter += inst.a as usize;
                 }
             }
             OP_INT_LE => {
-                let bv = actor.registers[inst.reg_b as usize];
-                let cv = actor.registers[inst.reg_c as usize];
+                let bv = actor.registers[inst.b as usize];
+                let cv = actor.registers[inst.c as usize];
 
-                validate_branch(actor.instructions.len(), counter, inst.reg_a)?;
+                validate_branch(actor.instructions.len(), counter, inst.a)?;
                 if bv <= cv {
-                    counter += inst.reg_a as usize;
+                    counter += inst.a as usize;
                 }
             }
             OP_INT_LT => {
-                let bv = actor.registers[inst.reg_b as usize];
-                let cv = actor.registers[inst.reg_c as usize];
+                let bv = actor.registers[inst.b as usize];
+                let cv = actor.registers[inst.c as usize];
 
-                validate_branch(actor.instructions.len(), counter, inst.reg_a)?;
+                validate_branch(actor.instructions.len(), counter, inst.a)?;
                 if bv < cv {
-                    counter += inst.reg_a as usize;
+                    counter += inst.a as usize;
                 }
             }
             OP_INT_NE => {
-                let bv = actor.registers[inst.reg_b as usize];
-                let cv = actor.registers[inst.reg_c as usize];
+                let bv = actor.registers[inst.b as usize];
+                let cv = actor.registers[inst.c as usize];
 
-                validate_branch(actor.instructions.len(), counter, inst.reg_a)?;
+                validate_branch(actor.instructions.len(), counter, inst.a)?;
                 if bv != cv {
-                    counter += inst.reg_a as usize;
+                    counter += inst.a as usize;
                 }
             }
             OP_DONE => {
                 return Ok(());
             }
             OP_OUTBOX_WRITE => {
-                debug_assert_eq!(inst.reg_b, 0, "OP_OUTBOX_WRITE doesn't use parameter B. Did you mean OP_OUTBOX_TAGGED?");
+                debug_assert_eq!(inst.b, 0, "OP_OUTBOX_WRITE doesn't use parameter B. Did you mean OP_OUTBOX_TAGGED?");
 
-                let av = actor.registers[inst.reg_a as usize];
+                let av = actor.registers[inst.a as usize];
                 let bytes = &actor.constants[register_to_range(av)];
 
                 write_outbox_message(&mut actor.outbox[next_out_byte..], bytes)?;
                 next_out_byte += bytes.len() + 2;
             }
             OP_OUTBOX_TAGGED => {
-                let av = actor.registers[inst.reg_a as usize];
+                let av = actor.registers[inst.a as usize];
                 let bytes = &actor.constants[register_to_range(av)];
 
-                write_outbox_message_tagged(&mut actor.outbox[next_out_byte..], inst.reg_b, bytes)?;
+                write_outbox_message_tagged(&mut actor.outbox[next_out_byte..], inst.b, bytes)?;
                 next_out_byte += bytes.len() + 3;
             }
             OP_JUMP => {
-                counter += inst.reg_a as usize;
+                counter += inst.a as usize;
                 if counter >= actor.instructions.len() {
                     return Err("program counter out of bounds");
                 }
             }
             OP_INVOKE => {
-                let dest = u16::from_be_bytes([inst.reg_a, inst.reg_b]);
+                let dest = u16::from_be_bytes([inst.a, inst.b]);
 
                 if invocations.contains(&dest) {
                     return Err("recursion not supported");
@@ -205,7 +205,7 @@ mod tests {
     fn moving_values() {
         let mut actor = Actor {
             registers: &mut [2, 3, 0],
-            instructions: &[Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 0, reg_c: 0}],
+            instructions: &[Instruction {opcode: OP_MOVE, a: 2, b: 0, c: 0}],
             constants: &[],
             outbox: &mut [],
             names: &[],
@@ -215,7 +215,7 @@ mod tests {
 
         let mut actor = Actor {
             registers: &mut [2, 3, 0],
-            instructions: &[Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 1, reg_c: 0}],
+            instructions: &[Instruction {opcode: OP_MOVE, a: 2, b: 1, c: 0}],
             constants: &[],
             outbox: &mut [],
             names: &[],
@@ -228,7 +228,7 @@ mod tests {
     fn addition() {
         let mut actor = Actor {
             registers: &mut [2, 3, 0],
-            instructions: &[Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1}],
+            instructions: &[Instruction {opcode: OP_INT_ADD, a: 2, b: 0, c: 1}],
             constants: &[],
             outbox: &mut [],
             names: &[],
@@ -241,7 +241,7 @@ mod tests {
     fn subtraction() {
         let mut actor = Actor {
             registers: &mut [2, 3, 0],
-            instructions: &[Instruction {opcode: OP_INT_SUB, reg_a: 2, reg_b: 0, reg_c: 1}],
+            instructions: &[Instruction {opcode: OP_INT_SUB, a: 2, b: 0, c: 1}],
             constants: &[],
             outbox: &mut [],
             names: &[],
@@ -254,7 +254,7 @@ mod tests {
     fn multiplication() {
         let mut actor = Actor {
             registers: &mut [2, 3, 0],
-            instructions: &[Instruction {opcode: OP_INT_MUL, reg_a: 2, reg_b: 0, reg_c: 1}],
+            instructions: &[Instruction {opcode: OP_INT_MUL, a: 2, b: 0, c: 1}],
             constants: &[],
             outbox: &mut [],
             names: &[],
@@ -267,7 +267,7 @@ mod tests {
     fn division() {
         let mut actor = Actor {
             registers: &mut [12, 3, 0],
-            instructions: &[Instruction {opcode: OP_INT_DIV, reg_a: 2, reg_b: 0, reg_c: 1}],
+            instructions: &[Instruction {opcode: OP_INT_DIV, a: 2, b: 0, c: 1}],
             constants: &[],
             outbox: &mut [],
             names: &[],
@@ -281,8 +281,8 @@ mod tests {
         let mut actor = Actor {
             registers: &mut [2, 3, 0],
             instructions: &[
-                Instruction {opcode: OP_INT_EQ, reg_a: 1, reg_b: 0, reg_c: 1},
-                Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1},
+                Instruction {opcode: OP_INT_EQ, a: 1, b: 0, c: 1},
+                Instruction {opcode: OP_INT_ADD, a: 2, b: 0, c: 1},
             ],
             constants: &[],
             outbox: &mut [],
@@ -297,8 +297,8 @@ mod tests {
         let mut actor = Actor {
             registers: &mut [3, 3, 0],
             instructions: &[
-                Instruction {opcode: OP_INT_EQ, reg_a: 1, reg_b: 0, reg_c: 1},
-                Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1},
+                Instruction {opcode: OP_INT_EQ, a: 1, b: 0, c: 1},
+                Instruction {opcode: OP_INT_ADD, a: 2, b: 0, c: 1},
             ],
             constants: &[],
             outbox: &mut [],
@@ -313,8 +313,8 @@ mod tests {
         let mut actor = Actor {
             registers: &mut [3, 3, 0],
             instructions: &[
-                Instruction {opcode: OP_INT_EQ, reg_a: 2, reg_b: 0, reg_c: 1},
-                Instruction {opcode: OP_INT_ADD, reg_a: 2, reg_b: 0, reg_c: 1},
+                Instruction {opcode: OP_INT_EQ, a: 2, b: 0, c: 1},
+                Instruction {opcode: OP_INT_ADD, a: 2, b: 0, c: 1},
             ],
             constants: &[],
             outbox: &mut [],
@@ -328,8 +328,8 @@ mod tests {
         let mut actor = Actor {
             registers: &mut [0, 0, 0],
             instructions: &[
-                Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
-                Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+                Instruction {opcode: OP_INT_EQ, a: 0, b: 0, c: 1},
+                Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
             ],
             constants: &[],
             outbox: &mut [],
@@ -341,7 +341,7 @@ mod tests {
         let mut actor = Actor {
             registers: &mut [0, 0, 0],
             instructions: &[
-                Instruction {opcode: OP_INT_EQ, reg_a: 0, reg_b: 0, reg_c: 1},
+                Instruction {opcode: OP_INT_EQ, a: 0, b: 0, c: 1},
             ],
             constants: &[],
             outbox: &mut [],
@@ -356,8 +356,8 @@ mod tests {
         let mut actor = Actor {
             registers: &mut [0, 100, 0],
             instructions: &[
-                Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-                Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
+                Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
+                Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0},
             ],
             constants: &[],
             outbox: &mut [],
@@ -375,7 +375,7 @@ mod tests {
         let mut actor = Actor {
             registers: &mut [range_to_register(0..4)],
             instructions: &[
-                Instruction {opcode: OP_OUTBOX_WRITE, reg_a: 0, reg_b: 0, reg_c: 0},
+                Instruction {opcode: OP_OUTBOX_WRITE, a: 0, b: 0, c: 0},
             ],
             constants: b"1234",
             outbox: &mut [0; 6],
@@ -402,8 +402,8 @@ mod tests {
                 range_to_register(4..7),
             ],
             instructions: &[
-                Instruction {opcode: OP_OUTBOX_WRITE, reg_a: 0, reg_b: 0, reg_c: 0},
-                Instruction {opcode: OP_OUTBOX_WRITE, reg_a: 1, reg_b: 0, reg_c: 0},
+                Instruction {opcode: OP_OUTBOX_WRITE, a: 0, b: 0, c: 0},
+                Instruction {opcode: OP_OUTBOX_WRITE, a: 1, b: 0, c: 0},
             ],
             constants: b"1234abcd",
             outbox: &mut [0; 11],
@@ -428,9 +428,9 @@ mod tests {
         let id_b = comp.write_constant_range(rb).unwrap();
         let id_c = comp.write_constant_range(rc).unwrap();
 
-        comp.write_instruction(Instruction {opcode: OP_OUTBOX_WRITE, reg_a: id_a, reg_b: 0, reg_c: 0}).unwrap();
-        comp.write_instruction(Instruction {opcode: OP_OUTBOX_WRITE, reg_a: id_b, reg_b: 0, reg_c: 0}).unwrap();
-        comp.write_instruction(Instruction {opcode: OP_OUTBOX_WRITE, reg_a: id_c, reg_b: 0, reg_c: 0}).unwrap();
+        comp.write_instruction(Instruction {opcode: OP_OUTBOX_WRITE, a: id_a, b: 0, c: 0}).unwrap();
+        comp.write_instruction(Instruction {opcode: OP_OUTBOX_WRITE, a: id_b, b: 0, c: 0}).unwrap();
+        comp.write_instruction(Instruction {opcode: OP_OUTBOX_WRITE, a: id_c, b: 0, c: 0}).unwrap();
 
         let mut actor = comp.as_actor();
         execute_at(&mut actor, 0).unwrap();
@@ -450,8 +450,8 @@ mod tests {
                 range_to_register(4..7),
             ],
             instructions: &[
-                Instruction {opcode: OP_OUTBOX_WRITE, reg_a: 0, reg_b: 0, reg_c: 0},
-                Instruction {opcode: OP_OUTBOX_WRITE, reg_a: 1, reg_b: 0, reg_c: 0},
+                Instruction {opcode: OP_OUTBOX_WRITE, a: 0, b: 0, c: 0},
+                Instruction {opcode: OP_OUTBOX_WRITE, a: 1, b: 0, c: 0},
             ],
             constants: b"1234abcd",
             outbox: &mut [0; 11],
@@ -460,7 +460,7 @@ mod tests {
         execute_at(&mut actor, 0).unwrap();
 
         actor.instructions = &[
-            Instruction {opcode: OP_OUTBOX_WRITE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_OUTBOX_WRITE, a: 0, b: 0, c: 0},
         ];
         execute_at(&mut actor, 0).unwrap();
 
@@ -474,8 +474,8 @@ mod tests {
         let mut actor = Actor {
             registers: &mut [4, 8],
             instructions: &[
-                Instruction {opcode: OP_JUMP, reg_a: 1, reg_b: 0, reg_c: 0},
-                Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
+                Instruction {opcode: OP_JUMP, a: 1, b: 0, c: 0},
+                Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0},
             ],
             constants: &[],
             outbox: &mut [],
@@ -491,11 +491,11 @@ mod tests {
         let mut actor = Actor {
             registers: &mut [4, 8, 3],
             instructions: &[
-                Instruction {opcode: OP_JUMP, reg_a: 1, reg_b: 0, reg_c: 0},
-                Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-                Instruction {opcode: OP_JUMP, reg_a: 1, reg_b: 0, reg_c: 0},
-                Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-                Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
+                Instruction {opcode: OP_JUMP, a: 1, b: 0, c: 0},
+                Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0},
+                Instruction {opcode: OP_JUMP, a: 1, b: 0, c: 0},
+                Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0},
+                Instruction {opcode: OP_MOVE, a: 0, b: 2, c: 0},
             ],
             constants: &[],
             outbox: &mut [],
@@ -511,11 +511,11 @@ mod tests {
         let mut actor = Actor {
             registers: &mut [0, 999, 333],
             instructions: &[
-                Instruction {opcode: OP_INVOKE, reg_a: 0, reg_b: 3, reg_c: 0},
-                Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
-                Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-                Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-                Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+                Instruction {opcode: OP_INVOKE, a: 0, b: 3, c: 0},
+                Instruction {opcode: OP_MOVE, a: 0, b: 2, c: 0},
+                Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
+                Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0},
+                Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
             ],
             constants: &[],
             outbox: &mut [],
@@ -531,12 +531,12 @@ mod tests {
         let mut actor = Actor {
             registers: &mut [0, 999, 333],
             instructions: &[
-                Instruction {opcode: OP_INVOKE, reg_a: 0, reg_b: 3, reg_c: 0},
-                Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
-                Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-                Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
-                Instruction {opcode: OP_INVOKE, reg_a: 0, reg_b: 3, reg_c: 0},
-                Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+                Instruction {opcode: OP_INVOKE, a: 0, b: 3, c: 0},
+                Instruction {opcode: OP_MOVE, a: 0, b: 2, c: 0},
+                Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
+                Instruction {opcode: OP_MOVE, a: 0, b: 2, c: 0},
+                Instruction {opcode: OP_INVOKE, a: 0, b: 3, c: 0},
+                Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
             ],
             constants: &[],
             outbox: &mut [],
@@ -551,13 +551,13 @@ mod tests {
         let mut actor = Actor {
             registers: &mut [0, 999, 333],
             instructions: &[
-                Instruction {opcode: OP_INVOKE, reg_a: 0, reg_b: 3, reg_c: 0},
-                Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
-                Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-                Instruction {opcode: OP_INVOKE, reg_a: 0, reg_b: 5, reg_c: 0},
-                Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-                Instruction {opcode: OP_INVOKE, reg_a: 0, reg_b: 3, reg_c: 0},
-                Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+                Instruction {opcode: OP_INVOKE, a: 0, b: 3, c: 0},
+                Instruction {opcode: OP_MOVE, a: 0, b: 2, c: 0},
+                Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
+                Instruction {opcode: OP_INVOKE, a: 0, b: 5, c: 0},
+                Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
+                Instruction {opcode: OP_INVOKE, a: 0, b: 3, c: 0},
+                Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
             ],
             constants: &[],
             outbox: &mut [],

@@ -28,10 +28,10 @@ pub fn parse_set(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(
     let op = match tok.next() {
         Token::Symbol(sym) => {
             match sym {
-                "+" => OP_INT_ADD,
-                "-" => OP_INT_SUB,
-                "*" => OP_INT_MUL,
-                "/" => OP_INT_DIV,
+                b"+" => OP_INT_ADD,
+                b"-" => OP_INT_SUB,
+                b"*" => OP_INT_MUL,
+                b"/" => OP_INT_DIV,
                 _ => return Err("unknown operator"),
             }
         }
@@ -51,7 +51,7 @@ pub fn parse_set(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(
         Token::Done => {
             match_register_types(compilation, &[dest, b])?;
 
-            return compilation.write_instruction(Instruction {opcode: OP_MOVE, reg_a: dest, reg_b: b, reg_c: 0});
+            return compilation.write_instruction(Instruction {opcode: OP_MOVE, a: dest, b, c: 0});
         }
         Token::Err(()) => {
             return Err("unknown error");
@@ -62,7 +62,7 @@ pub fn parse_set(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(
     tok.expect_end_of_input()?;
 
     match_register_types(compilation, &[dest, b, c])?;
-    compilation.write_instruction(Instruction {opcode: op, reg_a: dest, reg_b: b, reg_c: c})
+    compilation.write_instruction(Instruction {opcode: op, a: dest, b, c})
 }
 
 pub fn parse_event(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
@@ -73,7 +73,7 @@ pub fn parse_event(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result
     compilation.increase_nesting();
 
     // TODO: need to check for failures in all casts
-    let offset = compilation.next_instruction as u16;
+    let offset = compilation.next_instruction_offset() as u16;
     compilation.write_event(name, offset)?;
 
     connect_invoke(compilation, name, offset)?;
@@ -93,14 +93,14 @@ fn write_done(compilation: &mut Compilation) -> Result<(), &'static str> {
             return Ok(());
         }
     }
-    compilation.write_instruction(Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0})
+    compilation.write_instruction(Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0})
 }
 
 pub fn parse_end_event(tok: &mut Tokenizer, compilation: &mut Compilation)
 -> Result<(), &'static str> {
     tok.expect_end_of_input()?;
     compilation.decrease_nesting();
-    compilation.write_instruction(Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0})
+    compilation.write_instruction(Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0})
     // write_done(instructions) // this would only serve as an optimization for an empty event
 }
 
@@ -121,8 +121,8 @@ fn connect_invoke(compilation: &mut Compilation, name: &[u8], new_offset: u16) -
 
     for index in update {
         let instruction = &mut compilation.pick_instructions_mut()[index];
-        instruction.reg_a = a;
-        instruction.reg_b = b;
+        instruction.a = a;
+        instruction.b = b;
     }
 
     Ok(())
@@ -136,13 +136,14 @@ pub fn parse_invoke(tok: &mut Tokenizer, compilation: &mut Compilation) -> Resul
         r
     } else {
         let range = compilation.write_bytes(name)?;
-        if let Err(_) = compilation.incomplete_invocations.try_push((compilation.next_instruction, range)) {
+        let element = (compilation.next_instruction_offset(), range);
+        if let Err(_) = compilation.incomplete_invocations.try_push(element) {
             return Err("too many incomplete invocations");
         }
         0
     };
     let [a, b] = location.to_be_bytes();
-    compilation.write_instruction(Instruction {opcode: OP_INVOKE, reg_a: a, reg_b: b, reg_c: 0})
+    compilation.write_instruction(Instruction {opcode: OP_INVOKE, a, b, c: 0})
 }
 
 #[cfg(test)]
@@ -151,18 +152,18 @@ mod tests {
     use crate::command_branch::{parse_else_if, parse_else, parse_if, parse_end_if};
     use crate::compile::{compile, execute_compilation, Commands, Parsers};
     use crate::execute::execute_event;
-    use crate::parameter::parse_set;
+    use crate::command::parse_set;
     use crate::typing::{float_to_register, int_to_register};
 
     const COMMANDS: Commands = &[
-        "if",
-        "end if",
-        "set",
-        "event",
-        "end event",
-        "else if",
-        "else",
-        "invoke",
+        b"if",
+        b"end if",
+        b"set",
+        b"event",
+        b"end event",
+        b"else if",
+        b"else",
+        b"invoke",
     ];
     const PARSERS: Parsers = &[
         parse_if,
@@ -177,28 +178,28 @@ mod tests {
 
     #[test]
     fn literal_assignment() {
-        let comp = compile("set r: 7", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set r: 7", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..2], &[0, 7]);
-        assert_eq!(comp.pick_instructions()[0], Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0});
+        assert_eq!(comp.pick_instructions()[0], Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0});
     }
 
     #[test]
     fn literal_assignment_2() {
-        let comp = compile("set h: 6", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set h: 6", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..2], &[0, 6]);
-        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0}]);
+        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0}]);
     }
 
     #[test]
     fn assign_same_constant() {
-        let comp = compile("set h: 5\nset r: 5", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set h: 5\nset r: 5", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..3], &[0, 5, 0]);
         assert_eq!(comp.active_instructions(), &[
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-            Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 1, reg_c: 0},
+            Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0},
+            Instruction {opcode: OP_MOVE, a: 2, b: 1, c: 0},
         ]);
     }
 
@@ -206,90 +207,90 @@ mod tests {
     fn assign_different_type_constant() {
         let float_5_as_reg = float_to_register(5.0);
 
-        let comp = compile("set h: 1084227584\nset r: 5.0", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set h: 1084227584\nset r: 5.0", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..4], &[0, float_5_as_reg, 0, float_5_as_reg]);
         assert_eq!(comp.active_instructions(), &[
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-            Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 3, reg_c: 0},
+            Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0},
+            Instruction {opcode: OP_MOVE, a: 2, b: 3, c: 0},
         ]);
     }
 
     #[test]
     fn assign_same_variable() {
-        let comp = compile("set var: 5\nset var: 7", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set var: 5\nset var: 7", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..3], &[0, 5, 7]);
         assert_eq!(comp.active_instructions(), &[
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 2, reg_c: 0},
+            Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0},
+            Instruction {opcode: OP_MOVE, a: 0, b: 2, c: 0},
         ]);
     }
 
     #[test]
     fn addition() {
-        let comp = compile("set r: a + 7", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set r: a + 7", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..3], &[0, 0, 7]);
-        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_ADD, reg_a: 0, reg_b: 1, reg_c: 2}]);
+        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_ADD, a: 0, b: 1, c: 2}]);
     }
 
     #[test]
     fn addition_with_negative() {
-        let comp = compile("set r: a + -3", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set r: a + -3", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..3], &[0, 0, int_to_register(-3)]);
-        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_ADD, reg_a: 0, reg_b: 1, reg_c: 2}]);
+        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_ADD, a: 0, b: 1, c: 2}]);
     }
 
     #[test]
     fn subtraction() {
-        let comp = compile("set r: a - 7", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set r: a - 7", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..3], &[0, 0, 7]);
-        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_SUB, reg_a: 0, reg_b: 1, reg_c: 2}]);
+        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_SUB, a: 0, b: 1, c: 2}]);
     }
 
     #[test]
     fn multiplication() {
-        let comp = compile("set r: a * 7", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set r: a * 7", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(comp.pick_registers(), &[0, 0, 7]);
-        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_MUL, reg_a: 0, reg_b: 1, reg_c: 2}]);
+        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_MUL, a: 0, b: 1, c: 2}]);
     }
 
     #[test]
     fn division() {
-        let comp = compile("set r: a / 7", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set r: a / 7", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(comp.pick_registers(), &[0, 0, 7]);
-        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_DIV, reg_a: 0, reg_b: 1, reg_c: 2}]);
+        assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_DIV, a: 0, b: 1, c: 2}]);
     }
 
     #[test]
     fn no_trailing_operator() {
-        compile("set r: a +", COMMANDS, PARSERS).unwrap_err();
+        compile(b"set r: a +", COMMANDS, PARSERS).unwrap_err();
     }
 
     #[test]
     fn mismatched_type() {
-        compile("set r: 1\nset r: 2.0", COMMANDS, PARSERS).unwrap_err();
+        compile(b"set r: 1\nset r: 2.0", COMMANDS, PARSERS).unwrap_err();
     }
 
     #[test]
     fn no_mixed_arithmetic() {
-        compile("set r: 1 + 2.0", COMMANDS, PARSERS).unwrap_err();
+        compile(b"set r: 1 + 2.0", COMMANDS, PARSERS).unwrap_err();
     }
 
     #[test]
     fn empty_event() {
-        let source = "
+        let source = b"
             event do_something
             end event
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(comp.pick_instructions()[0], Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0});
+        assert_eq!(comp.pick_instructions()[0], Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0});
 
         // optimization could make this return Some(0)
         assert_eq!(comp.event_by_name(b"do_something"), Some(1));
@@ -297,7 +298,7 @@ mod tests {
 
     #[test]
     fn invoke_backward() {
-        let source = "
+        let source = b"
             event do_something
             end event
             event do_something_else
@@ -307,10 +308,10 @@ mod tests {
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-            Instruction {opcode: OP_INVOKE, reg_a: 0, reg_b: 1, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
+            Instruction {opcode: OP_INVOKE, a: 0, b: 1, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
 
         assert_eq!(comp.event_by_name(b"do_something"), Some(1));
@@ -319,7 +320,7 @@ mod tests {
 
     #[test]
     fn invoke_forward() {
-        let source = "
+        let source = b"
             invoke do_something
             event do_something
             end event
@@ -327,16 +328,16 @@ mod tests {
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_INVOKE, reg_a: 0, reg_b: 2, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_INVOKE, a: 0, b: 2, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
         assert_eq!(comp.event_by_name(b"do_something"), Some(2));
     }
 
     #[test]
     fn event_name_collision() {
-        let source = "
+        let source = b"
             set do_something: 0
             event do_something
             end event
@@ -346,7 +347,7 @@ mod tests {
 
     #[test]
     fn event_with_command() {
-        let source = "
+        let source = b"
             event do_something
                 set something_else: 10000
             end event
@@ -354,9 +355,9 @@ mod tests {
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
+            Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
         assert_eq!(comp.event_by_name(b"do_something"), Some(1));
         assert_eq!(comp.register_by_name(b"something_else"), Some(0));
@@ -364,7 +365,7 @@ mod tests {
 
     #[test]
     fn delimit_top_level() {
-        let source = "
+        let source = b"
             set something: 2222
             event do_something
                 set something_else: 10000
@@ -373,10 +374,10 @@ mod tests {
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
         assert_eq!(comp.pick_instructions(), &[
-            Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 1, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
-            Instruction {opcode: OP_MOVE, reg_a: 2, reg_b: 3, reg_c: 0},
-            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
+            Instruction {opcode: OP_MOVE, a: 2, b: 3, c: 0},
+            Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
         ]);
         assert_eq!(comp.nesting_depth_at(0), Some(0));
         assert_eq!(comp.nesting_depth_at(1), Some(0));
@@ -390,7 +391,7 @@ mod tests {
 
     #[test]
     fn stay_at_top_level() {
-        let source = "
+        let source = b"
             set thing: 22222
             event do_something
                 set thing: 10000
@@ -405,7 +406,7 @@ mod tests {
 
     #[test]
     fn goto_event() {
-        let source = "
+        let source = b"
             set thing: 22222
             event do_something
                 set thing: 10000
@@ -420,7 +421,7 @@ mod tests {
 
     #[test]
     fn exit_event() {
-        let source = "
+        let source = b"
             event do_something
                 set thing: 10000
             end event
@@ -435,7 +436,7 @@ mod tests {
 
     #[test]
     fn exit_empty_event() {
-        let source = "
+        let source = b"
             event do_something
             end event
             set thing: 22222
@@ -449,7 +450,7 @@ mod tests {
 
     #[test]
     fn exit_event_after_empty_event() {
-        let source = "
+        let source = b"
             event nothing
             end event
 

@@ -1,4 +1,4 @@
-use std::fs::read_to_string;
+use std::fs::read;
 use std::io::{stdin, BufRead, stdout, Write};
 use std::mem::take;
 use std::process::exit;
@@ -9,19 +9,17 @@ use scripting::compile::{Commands, Parsers, Compilation};
 use scripting::execute::{Actor, execute_at, execute_event};
 use scripting::instruction::{Instruction, OP_OUTBOX_TAGGED};
 use scripting::outbox::read_outbox;
-use scripting::parameter::{parse_set, parse_event, parse_end_event, parse_invoke};
+use scripting::command::{parse_set, parse_event, parse_end_event, parse_invoke};
 use scripting::token::Tokenizer;
 use scripting::version::compile_with_version;
 
 const FILE_NAME: &str = "adventure.script";
 
-fn read_file() -> String {
-    // TODO: let bytes = read("./adventure.script").unwrap();
-
-    if let Ok(bytes) = read_to_string(format!("./{}", FILE_NAME)) {
+fn read_file() -> Vec<u8> {
+    if let Ok(bytes) = read(format!("./{}", FILE_NAME)) {
         return bytes;
     }
-    match read_to_string(format!("./examples/text_adventure/{}", FILE_NAME)) {
+    match read(format!("./examples/text_adventure/{}", FILE_NAME)) {
         Ok(bytes) => bytes,
         Err(error) => {
             eprintln!("Unable to read file \"{}\": {}", FILE_NAME, error.to_string());
@@ -31,16 +29,16 @@ fn read_file() -> String {
 }
 
 const COMMANDS: Commands = &[
-    "if",
-    "end if",
-    "set",
-    "event",
-    "end event",
-    "print",
-    "option",
-    "else if",
-    "else",
-    "invoke",
+    b"if",
+    b"end if",
+    b"set",
+    b"event",
+    b"end event",
+    b"print",
+    b"option",
+    b"else if",
+    b"else",
+    b"invoke",
 ];
 
 const PARSERS: Parsers = &[
@@ -70,7 +68,7 @@ fn parse_print(tokenizer: &mut Tokenizer, compilation: &mut Compilation)
         compilation.write_bytes_and_register(message)?
     };
 
-    compilation.write_instruction(Instruction {opcode: OP_OUTBOX_TAGGED, reg_a: id, reg_b: TAG_PRINT, reg_c: 0})
+    compilation.write_instruction(Instruction {opcode: OP_OUTBOX_TAGGED, a: id, b: TAG_PRINT, c: 0})
 }
 
 fn parse_option(tokenizer: &mut Tokenizer, compilation: &mut Compilation)
@@ -84,8 +82,8 @@ fn parse_option(tokenizer: &mut Tokenizer, compilation: &mut Compilation)
     let name_id = compilation.write_bytes_and_register(event_name)?;
     let text_id = compilation.write_bytes_and_register(text)?;
 
-    compilation.write_instruction(Instruction {opcode: OP_OUTBOX_TAGGED, reg_a: name_id, reg_b: TAG_OPTION_EVENT, reg_c: 0})?;
-    compilation.write_instruction(Instruction {opcode: OP_OUTBOX_TAGGED, reg_a: text_id, reg_b: TAG_OPTION_TEXT, reg_c: 0})
+    compilation.write_instruction(Instruction {opcode: OP_OUTBOX_TAGGED, a: name_id, b: TAG_OPTION_EVENT, c: 0})?;
+    compilation.write_instruction(Instruction {opcode: OP_OUTBOX_TAGGED, a: text_id, b: TAG_OPTION_TEXT, c: 0})
 }
 
 struct Option {

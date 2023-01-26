@@ -5,7 +5,7 @@ pub mod compile;
 pub mod execute;
 pub mod instruction;
 pub mod outbox;
-pub mod parameter;
+pub mod command;
 mod scan;
 pub mod token;
 pub mod typing;

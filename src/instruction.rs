@@ -3,14 +3,14 @@ use core::fmt::{Debug, Formatter, Result as FmtResult};
 #[derive(Copy, Clone, Default, PartialEq, Eq)]
 pub struct Instruction {
     pub opcode: u8,
-    pub reg_a: u8,
-    pub reg_b: u8,
-    pub reg_c: u8,
+    pub a: u8,
+    pub b: u8,
+    pub c: u8,
 }
 
 impl Debug for Instruction {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(f, "I<op={} A={} B={} C={}>", self.opcode, self.reg_a, self.reg_b, self.reg_c)
+        write!(f, "I<op={} A={} B={} C={}>", self.opcode, self.a, self.b, self.c)
     }
 }
 

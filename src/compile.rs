@@ -2,7 +2,6 @@ use core::cmp::max;
 use core::convert::TryInto;
 use core::ops::Range;
 use arrayvec::ArrayVec;
-
 use crate::instruction::{Instruction, OP_DONE};
 use crate::scan::{ScanOp, Script, script_next};
 use crate::execute::Actor;
@@ -11,7 +10,7 @@ use crate::typing::{DataType, Register, int_to_register, float_to_register, rang
 
 pub type Parser = fn(parameters: &mut Tokenizer, registers: &mut Compilation) -> Result<(), &'static str>;
 pub type Parsers<'a> = &'a [Parser];
-pub type Commands<'a> = &'a [&'a str];
+pub type Commands<'a> = &'a [&'a [u8]];
 
 #[cfg(test)]
 pub fn execute_compilation(compilation: &mut Compilation) -> Result<(), &'static str> {
@@ -77,18 +76,16 @@ pub fn event_by_name(names: &[NameSpec], other_bytes: &[u8], check: &[u8]) -> Op
 }
 
 const NUM_OTHER_BYTES: usize = 1024 * 3;
+const MAX_NAMES: usize = NUM_REGISTERS + 50;
 
 #[derive(Debug)]
 pub struct Compilation {
-    pub registers: [Register; NUM_REGISTERS],
+    pub registers: ArrayVec<Register, NUM_REGISTERS>,
     metadata: [RegisterInfo; NUM_REGISTERS],
-    names: [NameSpec; NUM_REGISTERS + 50],
+    names: ArrayVec<NameSpec, MAX_NAMES>,
     pub other_bytes: [u8; NUM_OTHER_BYTES],
-    pub next_register: usize,
-    pub next_name: usize,
     pub next_byte: usize,
-    instructions: [Instruction; 1024],
-    pub next_instruction: usize,
+    instructions: ArrayVec<Instruction, 1024>,
     depth: [u8; 1024],
     pub current_depth: u8,
     pub incomplete_invocations: ArrayVec<(usize, Range<u16>), 30>,
@@ -97,15 +94,12 @@ pub struct Compilation {
 impl Default for Compilation {
     fn default() -> Self {
         Compilation {
-            registers: [0; NUM_REGISTERS],
+            registers: Default::default(),
             metadata: [RegisterInfo::default(); NUM_REGISTERS],
-            names: [NameSpec::default(); NUM_REGISTERS + 50],
+            names: Default::default(),
             other_bytes: [0; NUM_OTHER_BYTES],
-            next_register: 0,
-            next_name: 0,
             next_byte: 0,
-            instructions: [Instruction::default(); 1024],
-            next_instruction: 0,
+            instructions: Default::default(),
             depth: [0; 1024],
             current_depth: 0,
             incomplete_invocations: Default::default(),
@@ -120,7 +114,7 @@ fn into_inst_index(index: usize) -> Result<u8, &'static str> {
 impl Compilation {
 
     pub fn nesting_depth_at(&self, index: usize) -> Option<u8> {
-        if index >= self.next_instruction {
+        if index >= self.instructions.len() {
             return None;
         }
         Some(self.depth[index])
@@ -144,48 +138,48 @@ impl Compilation {
     }
 
     pub fn pick_registers(&self) -> &[Register] {
-        &self.registers[..self.next_register]
+        &self.registers
     }
 
     pub fn pick_registers_mut(&mut self) -> &mut [Register] {
-        &mut self.registers[..self.next_register]
+        &mut self.registers
     }
 
     #[cfg(test)]
     pub fn active_instructions(&self) -> &[Instruction] {
         if let Some(inst) = self.last_instruction() {
             if inst.opcode == OP_DONE {
-                return &self.instructions[..self.next_instruction - 1];
+                return &self.instructions[..self.instructions.len() - 1];
             }
         }
-        &self.instructions[..self.next_instruction]
+        &self.instructions
     }
 
     pub fn pick_depth(&self) -> &[u8] {
-        &self.depth[..self.next_instruction]
+        &self.depth[..self.instructions.len()]
     }
 
     pub fn pick_instructions(&self) -> &[Instruction] {
-        &self.instructions[..self.next_instruction]
+        &self.instructions
     }
 
     pub fn pick_instructions_mut(&mut self) -> &mut [Instruction] {
-        &mut self.instructions[..self.next_instruction]
+        &mut self.instructions
     }
 
     pub fn last_instruction(&self) -> Option<&Instruction> {
-        if self.next_instruction == 0 {
-            None
-        } else {
-            Some(&self.instructions[self.next_instruction - 1])
-        }
+        self.instructions.last()
+    }
+
+    pub fn next_instruction_offset(&self) -> usize {
+        self.instructions.len()
     }
 
     pub fn as_actor(&mut self) -> Actor {
         let (constants, outbox) = self.other_bytes.split_at_mut(self.next_byte);
-        let registers = &mut self.registers[..self.next_register];
-        let instructions = &self.instructions[..self.next_instruction];
-        let names = &self.names[..self.next_name];
+        let registers = &mut self.registers;
+        let instructions = &self.instructions;
+        let names = self.names.as_ref();
         Actor {registers, instructions, constants, outbox, names}
     }
 
@@ -206,7 +200,7 @@ impl Compilation {
     }
 
     pub fn event_by_name(&self, check: &[u8]) -> Option<u16> {
-        event_by_name(&self.names[..self.next_name], &self.other_bytes, check)
+        event_by_name(&self.names, &self.other_bytes, check)
     }
 
     pub fn write_bytes_and_register(&mut self, value: &[u8]) -> Result<u8, &'static str> {
@@ -257,19 +251,18 @@ impl Compilation {
     }
 
     fn write_name(&mut self, value: &[u8], register_or_event: u16) -> Result<(), &'static str> {
-        debug_assert!(value.len() <= 50);
+        if value.len() > 50 {
+            return Err("name is too long");
+        }
 
-        for i in 0..self.next_name {
-            let spec = &self.names[i];
+        for spec in &self.names {
             let name = spec.pick_bytes(&self.other_bytes);
             if name.eq_ignore_ascii_case(value) {
-                self.names[self.next_name] = NameSpec {
+                return self.names.try_push(NameSpec {
                     start: spec.start,
                     end: spec.end,
                     register_or_event,
-                };
-
-                return Ok(());
+                }).map_err(|_| "too many names");
             }
         }
 
@@ -277,14 +270,11 @@ impl Compilation {
         let start = range.start;
         let end = range.end;
 
-        self.names[self.next_name] = NameSpec {
+        self.names.try_push(NameSpec {
             start,
             end,
             register_or_event,
-        };
-        self.next_name += 1;
-
-        Ok(())
+        }).map_err(|_| "too many names")
     }
 
     pub fn is_event_usize(&self, offset: usize) -> bool {
@@ -307,7 +297,7 @@ impl Compilation {
     }
 
     fn valid_names(&self) -> impl Iterator<Item=&NameSpec> {
-        self.names.iter().take(self.next_name)
+        self.names.iter()
     }
 
     fn register_name(&self, id: u8) -> &[u8] {
@@ -322,12 +312,8 @@ impl Compilation {
     }
 
     fn write_register(&mut self, value: u32) -> Result<u8, &'static str> {
-        if self.next_register >= self.registers.len() {
-            return Err("too many variables/constants");
-        }
-        let id = into_inst_index(self.next_register)?;
-        self.registers[self.next_register] = value;
-        self.next_register += 1;
+        let id = into_inst_index(self.registers.len())?;
+        self.registers.try_push(value).map_err(|_| "too many variables/constants")?;
         Ok(id)
     }
 
@@ -353,20 +339,21 @@ impl Compilation {
         }
     }
 
-    pub fn write_variable(&mut self, name: &str, data_type: DataType) -> Result<u8, &'static str> {
-        if name.contains(|c: char| c.is_whitespace()) {
-            return Err("a variable name can't contain spaces or tabs");
+    pub fn write_variable(&mut self, name: &[u8], data_type: DataType) -> Result<u8, &'static str> {
+        for c in name {
+            if (*c as char).is_ascii_whitespace() {
+                return Err("a variable name can't contain spaces or tabs");
+            }
         }
         if name.len() > 50 {
             return Err("a variable name must be 50 characters or less");
         }
-        let name_bytes = name.as_bytes();
 
-        for i in 0..self.next_register {
+        for i in 0..self.registers.len() {
             let meta = &self.metadata[i];
             let found_name = self.register_name(i as u8);
 
-            if !meta.constant && found_name.eq_ignore_ascii_case(name_bytes) {
+            if !meta.constant && found_name.eq_ignore_ascii_case(name) {
                 if data_type != DataType::Unknown {
                     if meta.data_type != data_type {
                         return Err("type mismatch");
@@ -384,7 +371,7 @@ impl Compilation {
         let meta = &mut self.metadata[id as usize];
         meta.data_type = data_type;
 
-        self.write_name(name_bytes, id as u16)?;
+        self.write_name(name, id as u16)?;
 
         debug_assert_eq!(self.get_data_type(id), data_type);
         Ok(id)
@@ -393,7 +380,7 @@ impl Compilation {
     fn write_constant(&mut self, value: u32, data_type: DataType) -> Result<u8, &'static str> {
         debug_assert!(data_type != DataType::Unknown, "all constants should have a known type");
 
-        for i in 0..self.next_register {
+        for i in 0..self.registers.len() {
             let meta = &self.metadata[i];
             if meta.constant && meta.data_type == data_type && self.registers[i] == value {
                 return into_inst_index(i);
@@ -436,7 +423,7 @@ impl Compilation {
     }
 
     pub fn write_event(&mut self, name: &[u8], offset: u16) -> Result<(), &'static str> {
-        if offset as usize > self.next_instruction {
+        if offset as usize > self.instructions.len() {
             // create event for existing instruction or next upcoming instruction
             return Err("event offset out of range");
         }
@@ -445,7 +432,7 @@ impl Compilation {
         }
         let id = offset | EVENT_BIT_16;
 
-        for found in self.names.iter().take(self.next_name) {
+        for found in self.names.iter() {
             if found.pick_bytes(&self.other_bytes).eq_ignore_ascii_case(name) {
                 return Err("name already taken");
             }
@@ -455,12 +442,8 @@ impl Compilation {
     }
 
     pub fn write_instruction(&mut self, instruction: Instruction) -> Result<(), &'static str> {
-        if self.next_instruction >= self.instructions.len() {
-            return Err("too many bytecode instructions");
-        }
-        self.instructions[self.next_instruction] = instruction;
-        self.depth[self.next_instruction] = self.current_depth;
-        self.next_instruction += 1;
+        self.instructions.try_push(instruction).map_err(|_| "too many bytecode instructions")?;
+        self.depth[self.instructions.len() - 1] = self.current_depth;
         Ok(())
     }
 }
@@ -506,7 +489,7 @@ pub fn token_to_register_id(compilation: &mut Compilation, token: Token, constan
     }
 }
 
-pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
+pub fn compile(source: &[u8], commands: Commands, parsers: &[Parser])
 -> Result<Compilation, &'static str> {
     if commands.len() != parsers.len() {
         return Err("command list and parser list must be the same length");
@@ -514,15 +497,9 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
 
     let mut script = Script::new(source);
     let mut compilation = Compilation::default();
-
-    let mut prev_len = 0;
+    let mut prev_len = script.source.len();
 
     loop {
-        if compilation.next_instruction != 0 && script.source.len() >= prev_len {
-            return Err("internal compiler error: no bytes processed");
-        }
-        prev_len = script.source.len();
-
         let scanop = script_next(&mut script, commands);
 
         match scanop {
@@ -536,13 +513,13 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
                 }
             }
             ScanOp::Done => {
-                if compilation.next_instruction < compilation.instructions.len() {
+                if compilation.instructions.len() < compilation.instructions.capacity() {
                     if compilation.last_instruction().map(|inst| inst.opcode == OP_DONE) != Some(true) {
                         compilation.write_instruction(Instruction {
                             opcode: OP_DONE,
-                            reg_a: 0,
-                            reg_b: 0,
-                            reg_c: 0,
+                            a: 0,
+                            b: 0,
+                            c: 0,
                         })?;
                     }
                     debug_assert_eq!(compilation.last_instruction().unwrap().opcode, OP_DONE);
@@ -553,6 +530,11 @@ pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
                 return Err(error.static_display());
             }
         }
+
+        if script.source.len() >= prev_len {
+            return Err("internal compiler error: no bytes processed");
+        }
+        prev_len = script.source.len();
     }
 }
 
@@ -563,9 +545,9 @@ mod tests {
     use crate::typing::register_to_range;
 
     const COMMANDS: Commands = &[
-        "if",
-        "end if",
-        "set",
+        b"if",
+        b"end if",
+        b"set",
     ];
 
     fn no(_: &mut Tokenizer, _: &mut Compilation) -> Result<(), &'static str> {
@@ -580,32 +562,32 @@ mod tests {
 
     #[test]
     fn empty_termination() {
-        let compilation = compile("\t \n\t ", COMMANDS, PARSERS).unwrap();
+        let compilation = compile(b"\t \n\t ", COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(compilation.instructions[0], Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0});
+        assert_eq!(compilation.instructions[0], Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0});
     }
 
     #[test]
     fn write_same_variable() {
         let mut wr = Compilation::default();
-        wr.write_variable("asdf", DataType::Unknown).unwrap();
-        wr.write_variable("asdf", DataType::Unknown).unwrap();
+        wr.write_variable(b"asdf", DataType::Unknown).unwrap();
+        wr.write_variable(b"asdf", DataType::Unknown).unwrap();
 
-        assert_eq!(wr.next_register, 1);
+        assert_eq!(wr.registers.len(), 1);
         assert_eq!(wr.register_name(0), b"asdf");
-        assert_eq!(&wr.registers[0..2], &[0, 0]);
+        assert_eq!(wr.registers.as_ref(), &[0]);
         assert_eq!(wr.register_by_name(b"asdf"), Some(0));
     }
 
     #[test]
     fn write_same_variable_case_insensitive() {
         let mut wr = Compilation::default();
-        wr.write_variable("asdf", DataType::Unknown).unwrap();
-        wr.write_variable("ASDF", DataType::Unknown).unwrap();
+        wr.write_variable(b"asdf", DataType::Unknown).unwrap();
+        wr.write_variable(b"ASDF", DataType::Unknown).unwrap();
 
-        assert_eq!(wr.next_register, 1);
+        assert_eq!(wr.registers.len(), 1);
         assert_eq!(wr.register_name(0), b"asdf");
-        assert_eq!(&wr.registers[0..2], &[0, 0]);
+        assert_eq!(wr.registers.as_ref(), &[0]);
         assert_eq!(wr.register_by_name(b"asdf"), Some(0));
     }
 
@@ -677,7 +659,7 @@ mod tests {
     #[test]
     fn no_event_register_name_collision() {
         let mut wr = Compilation::default();
-        wr.write_variable("asdf", DataType::Unknown).unwrap();
+        wr.write_variable(b"asdf", DataType::Unknown).unwrap();
         wr.write_event(b"asdf", 0).unwrap_err();
     }
 
@@ -752,21 +734,21 @@ mod tests {
     fn termination() {
         let mut wr = Compilation::default();
         assert_eq!(wr.last_instruction(), None);
-        wr.write_instruction(Instruction {opcode: 1, reg_a: 2, reg_b: 3, reg_c: 4}).unwrap();
-        assert_eq!(wr.last_instruction(), Some(&Instruction {opcode: 1, reg_a: 2, reg_b: 3, reg_c: 4}));
-        wr.write_instruction(Instruction {opcode: 5, reg_a: 6, reg_b: 3, reg_c: 4}).unwrap();
-        assert_eq!(wr.last_instruction(), Some(&Instruction {opcode: 5, reg_a: 6, reg_b: 3, reg_c: 4}));
+        wr.write_instruction(Instruction {opcode: 1, a: 2, b: 3, c: 4}).unwrap();
+        assert_eq!(wr.last_instruction(), Some(&Instruction {opcode: 1, a: 2, b: 3, c: 4}));
+        wr.write_instruction(Instruction {opcode: 5, a: 6, b: 3, c: 4}).unwrap();
+        assert_eq!(wr.last_instruction(), Some(&Instruction {opcode: 5, a: 6, b: 3, c: 4}));
     }
 
     #[test]
     fn track_nesting_depth() {
         let mut wr = Compilation::default();
 
-        wr.write_instruction(Instruction {opcode: OP_INT_NE, reg_a: 0, reg_b: 0, reg_c: 0}).unwrap();
+        wr.write_instruction(Instruction {opcode: OP_INT_NE, a: 0, b: 0, c: 0}).unwrap();
         wr.increase_nesting();
-        wr.write_instruction(Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 0, reg_c: 0}).unwrap();
+        wr.write_instruction(Instruction {opcode: OP_MOVE, a: 0, b: 0, c: 0}).unwrap();
         wr.decrease_nesting();
-        wr.write_instruction(Instruction {opcode: OP_MOVE, reg_a: 0, reg_b: 0, reg_c: 0}).unwrap();
+        wr.write_instruction(Instruction {opcode: OP_MOVE, a: 0, b: 0, c: 0}).unwrap();
 
         assert_eq!(wr.nesting_depth_at(0), Some(0));
         assert_eq!(wr.nesting_depth_at(1), Some(1));
