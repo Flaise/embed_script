@@ -1,5 +1,4 @@
 use arrayvec::ArrayVec;
-
 use crate::compile::{NameSpec, event_by_name};
 use crate::instruction::{Instruction, OP_MOVE, OP_INT_ADD, OP_INT_SUB, OP_INT_MUL, OP_INT_DIV, OP_INT_EQ, OP_DONE, OP_OUTBOX_WRITE, OP_JUMP, OP_INT_LE, OP_INT_LT, OP_INT_NE, OP_OUTBOX_TAGGED, OP_INVOKE};
 use crate::outbox::{write_outbox_message, write_outbox_message_tagged};
