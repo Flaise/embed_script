@@ -8,7 +8,19 @@ PRINT     A simple text-based adventure game made with a new scripting language.
 PRINT
 PRINT Apparently it's up to you to save the world.
 
-INVOKE town_square
+EVENT before_each
+    #PRINT (running before each)
+    #OPTION town_square: teleport back to the town square??? :O
+END EVENT
+
+EVENT after_each
+    #PRINT (running after each)
+    #OPTION town_square: NORLY just teleport back to town square
+END EVENT
+
+EVENT starting
+    INVOKE town_square
+END EVENT
 
 EVENT town_square
     IF visited_town_square = 1

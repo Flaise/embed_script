@@ -1,5 +1,6 @@
 use std::fs::read_to_string;
 use std::io::{stdin, BufRead, stdout, Write};
+use std::mem::take;
 use std::process::exit;
 use std::str::from_utf8;
 use std::time::Instant;
@@ -87,11 +88,19 @@ fn parse_option(tokenizer: &mut Tokenizer, compilation: &mut Compilation)
     compilation.write_instruction(Instruction {opcode: OP_OUTBOX_TAGGED, reg_a: text_id, reg_b: TAG_OPTION_TEXT, reg_c: 0})
 }
 
-fn outbox_output(actor: &Actor) -> Vec<String> {
-    println!();
+struct Option {
+    label: String,
+    event: Vec<u8>,
+}
 
-    let mut options = vec![];
-    let mut options_printed = 0;
+#[derive(Default)]
+struct Output {
+    paragraphs: String,
+    options: Vec<Option>,
+}
+
+fn extract_outbox(actor: &Actor, output: &mut Output) {
+    let mut option_events = vec![];
     let mut option_labels = vec![];
 
     for bytes in read_outbox(&actor) {
@@ -99,46 +108,46 @@ fn outbox_output(actor: &Actor) -> Vec<String> {
         let message = &bytes[1..];
         match tag {
             TAG_PRINT => {
-                println!("{}", String::from_utf8_lossy(message));
+                output.paragraphs.push_str(&String::from_utf8_lossy(message));
+                output.paragraphs.push('\n');
             }
             TAG_OPTION_EVENT => {
-                options.push(String::from_utf8_lossy(message).into_owned());
+                option_events.push(message.to_vec());
             }
             TAG_OPTION_TEXT => {
-                options_printed += 1;
-                option_labels.push(format!("    [{}] {}", options_printed, String::from_utf8_lossy(message)));
+                option_labels.push(String::from_utf8_lossy(message).to_string());
             }
             _ => {
-                println!("internal error: unknown tag {}", tag);
-                exit(1);
+                panic!("internal error: unknown tag {}", tag);
             }
         }
     }
 
-    if options_printed != options.len() {
+    if option_labels.len() != option_events.len() {
         panic!("internal error: options list malformed");
     }
-    if options.len() > 9 {
-        panic!("script error: too many options, must be 1-9");
-    }
 
-    if option_labels.len() > 0 {
-        println!();
-        for label in option_labels {
-            println!("{}", label);
-        }
-    }
-
-    options
+    let options = option_labels.into_iter().zip(option_events).map(|(label, event)| Option {label, event});
+    output.options.extend(options);
 }
 
 /// The host environment has to provide its own implementation of "print" because needs vary. A
 /// console app like this may send the bytes to stdout, a game might direct the bytes into its own
 /// custom developer console, a regular desktop app might not have a print command or might send the
 /// bytes to stderr, and a very small computer might output the bytes via a serial cable.
-fn process_outbox(actor: &Actor) -> Vec<u8> {
-    let options = outbox_output(actor);
-    if options.len() == 0 {
+fn process_output_input(output: &mut Output) -> Vec<u8> {
+    println!("\n{}", output.paragraphs);
+
+    if output.options.len() > 9 {
+        panic!("script error: too many options, must be 1-9");
+    }
+    if output.options.len() > 0 {
+        for (i, option) in output.options.iter().enumerate() {
+            println!("    [{}] {}", i + 1, option.label);
+        }
+    }
+
+    if output.options.len() == 0 {
         exit(0);
     }
 
@@ -156,9 +165,9 @@ fn process_outbox(actor: &Actor) -> Vec<u8> {
 
         match line.parse::<usize>() {
             Ok(num) => {
-                if num > 0 && num <= options.len() {
+                if num > 0 && num <= output.options.len() {
                     let index = num - 1;
-                    return options[index].as_bytes().to_vec();
+                    return take(&mut output.options[index].event);
                 }
                 println!("Input is out of range.");
             }
@@ -167,7 +176,7 @@ fn process_outbox(actor: &Actor) -> Vec<u8> {
             }
         }
 
-        println!("Input a number from 1 to {}.", options.len());
+        println!("Input a number from 1 to {}.", output.options.len());
     }
 }
 
@@ -186,11 +195,27 @@ fn main() {
     // println!("{}", String::from_utf8_lossy(&compilation.other_bytes));
     // println!("---");
 
+    let mut output = Output::default();
     let mut actor = compilation.as_actor();
-    execute_at(&mut actor, 0).unwrap();
 
+    execute_at(&mut actor, 0).unwrap();
+    extract_outbox(&actor, &mut output);
+
+    let mut next = b"starting".to_vec();
     loop {
-        let next = process_outbox(&actor);
+        if &next != b"exiting" {
+            execute_event(&mut actor, b"before_each").unwrap();
+            extract_outbox(&actor, &mut output);
+        }
         execute_event(&mut actor, &next).unwrap();
+        extract_outbox(&actor, &mut output);
+        if &next != b"exiting" {
+            execute_event(&mut actor, b"after_each").unwrap();
+            extract_outbox(&actor, &mut output);
+        }
+
+        next = process_output_input(&mut output);
+        output.options.clear();
+        output.paragraphs.clear();
     }
 }
