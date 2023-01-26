@@ -76,15 +76,15 @@ pub fn event_by_name(names: &[NameSpec], other_bytes: &[u8], check: &[u8]) -> Op
 }
 
 const NUM_OTHER_BYTES: usize = 1024 * 3;
+const MAX_NAMES: usize = NUM_REGISTERS + 50;
 
 #[derive(Debug)]
 pub struct Compilation {
     pub registers: [Register; NUM_REGISTERS],
     metadata: [RegisterInfo; NUM_REGISTERS],
-    names: [NameSpec; NUM_REGISTERS + 50],
+    names: ArrayVec<NameSpec, MAX_NAMES>,
     pub other_bytes: [u8; NUM_OTHER_BYTES],
     pub next_register: usize,
-    pub next_name: usize,
     pub next_byte: usize,
     instructions: [Instruction; 1024],
     pub next_instruction: usize,
@@ -98,10 +98,9 @@ impl Default for Compilation {
         Compilation {
             registers: [0; NUM_REGISTERS],
             metadata: [RegisterInfo::default(); NUM_REGISTERS],
-            names: [NameSpec::default(); NUM_REGISTERS + 50],
+            names: Default::default(),
             other_bytes: [0; NUM_OTHER_BYTES],
             next_register: 0,
-            next_name: 0,
             next_byte: 0,
             instructions: [Instruction::default(); 1024],
             next_instruction: 0,
@@ -184,7 +183,7 @@ impl Compilation {
         let (constants, outbox) = self.other_bytes.split_at_mut(self.next_byte);
         let registers = &mut self.registers[..self.next_register];
         let instructions = &self.instructions[..self.next_instruction];
-        let names = &self.names[..self.next_name];
+        let names = self.names.as_ref();
         Actor {registers, instructions, constants, outbox, names}
     }
 
@@ -205,7 +204,7 @@ impl Compilation {
     }
 
     pub fn event_by_name(&self, check: &[u8]) -> Option<u16> {
-        event_by_name(&self.names[..self.next_name], &self.other_bytes, check)
+        event_by_name(&self.names, &self.other_bytes, check)
     }
 
     pub fn write_bytes_and_register(&mut self, value: &[u8]) -> Result<u8, &'static str> {
@@ -256,19 +255,18 @@ impl Compilation {
     }
 
     fn write_name(&mut self, value: &[u8], register_or_event: u16) -> Result<(), &'static str> {
-        debug_assert!(value.len() <= 50);
+        if value.len() > 50 {
+            return Err("name is too long");
+        }
 
-        for i in 0..self.next_name {
-            let spec = &self.names[i];
+        for spec in &self.names {
             let name = spec.pick_bytes(&self.other_bytes);
             if name.eq_ignore_ascii_case(value) {
-                self.names[self.next_name] = NameSpec {
+                return self.names.try_push(NameSpec {
                     start: spec.start,
                     end: spec.end,
                     register_or_event,
-                };
-
-                return Ok(());
+                }).map_err(|_| "too many names");
             }
         }
 
@@ -276,14 +274,11 @@ impl Compilation {
         let start = range.start;
         let end = range.end;
 
-        self.names[self.next_name] = NameSpec {
+        self.names.try_push(NameSpec {
             start,
             end,
             register_or_event,
-        };
-        self.next_name += 1;
-
-        Ok(())
+        }).map_err(|_| "too many names")
     }
 
     pub fn is_event_usize(&self, offset: usize) -> bool {
@@ -306,7 +301,7 @@ impl Compilation {
     }
 
     fn valid_names(&self) -> impl Iterator<Item=&NameSpec> {
-        self.names.iter().take(self.next_name)
+        self.names.iter()
     }
 
     fn register_name(&self, id: u8) -> &[u8] {
@@ -445,7 +440,7 @@ impl Compilation {
         }
         let id = offset | EVENT_BIT_16;
 
-        for found in self.names.iter().take(self.next_name) {
+        for found in self.names.iter() {
             if found.pick_bytes(&self.other_bytes).eq_ignore_ascii_case(name) {
                 return Err("name already taken");
             }
