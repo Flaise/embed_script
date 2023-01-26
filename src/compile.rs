@@ -1,6 +1,8 @@
 use core::cmp::max;
 use core::convert::TryInto;
 use core::ops::Range;
+use arrayvec::ArrayVec;
+
 use crate::instruction::{Instruction, OP_DONE};
 use crate::scan::{ScanOp, Script, script_next};
 use crate::execute::Actor;
@@ -74,12 +76,14 @@ pub fn event_by_name(names: &[NameSpec], other_bytes: &[u8], check: &[u8]) -> Op
     None
 }
 
+const NUM_OTHER_BYTES: usize = 1024 * 3;
+
 #[derive(Debug)]
 pub struct Compilation {
     pub registers: [Register; NUM_REGISTERS],
     metadata: [RegisterInfo; NUM_REGISTERS],
     names: [NameSpec; NUM_REGISTERS + 50],
-    pub other_bytes: [u8; 2048],
+    pub other_bytes: [u8; NUM_OTHER_BYTES],
     pub next_register: usize,
     pub next_name: usize,
     pub next_byte: usize,
@@ -87,6 +91,7 @@ pub struct Compilation {
     pub next_instruction: usize,
     depth: [u8; 1024],
     pub current_depth: u8,
+    pub incomplete_invocations: ArrayVec<(usize, Range<u16>), 30>,
 }
 
 impl Default for Compilation {
@@ -95,7 +100,7 @@ impl Default for Compilation {
             registers: [0; NUM_REGISTERS],
             metadata: [RegisterInfo::default(); NUM_REGISTERS],
             names: [NameSpec::default(); NUM_REGISTERS + 50],
-            other_bytes: [0; 2048],
+            other_bytes: [0; NUM_OTHER_BYTES],
             next_register: 0,
             next_name: 0,
             next_byte: 0,
@@ -103,6 +108,7 @@ impl Default for Compilation {
             next_instruction: 0,
             depth: [0; 1024],
             current_depth: 0,
+            incomplete_invocations: Default::default(),
         }
     }
 }
@@ -208,9 +214,14 @@ impl Compilation {
         self.write_constant_range(range)
     }
 
+    /// Adds the bytes to the constants if the given value isn't already stored. Doesn't write
+    /// duplicate bytes so it's safe to call repeatedly with the same parameters.
     pub fn write_bytes(&mut self, value: &[u8]) -> Result<Range<u16>, &'static str> {
         if value.len() == 0 {
             return Ok(0..0);
+        }
+        if value.len() > u16::MAX as usize {
+            return Err("writing too many constant bytes");
         }
 
         let mut start = self.next_byte;

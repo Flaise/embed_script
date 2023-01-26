@@ -34,9 +34,12 @@ pub const OP_INT_SUB: u8 = 8;
 pub const OP_INT_MUL: u8 = 9;
 /// R(A) <- R(B) / R(C)
 pub const OP_INT_DIV: u8 = 10;
-/// outbox[...] <- constants[range(R(A))]
+/// outbox[...] <- len(range(R(A))), constants[range(R(A))]
 pub const OP_OUTBOX_WRITE: u8 = 11;
-/// outbox[...] <- B, constants[range(R(A))]
+/// outbox[...] <- len(range(R(A))) + 1, B, constants[range(R(A))]
 pub const OP_OUTBOX_TAGGED: u8 = 12;
 /// pc += A
 pub const OP_JUMP: u8 = 13;
+
+/// pc = u16be([A, B])
+pub const OP_INVOKE: u8 = 14;

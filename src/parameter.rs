@@ -1,5 +1,7 @@
+use arrayvec::ArrayVec;
+
 use crate::compile::{Compilation, token_to_register_id};
-use crate::instruction::{Instruction, OP_MOVE, OP_INT_ADD, OP_INT_SUB, OP_DONE, OP_INT_MUL, OP_INT_DIV};
+use crate::instruction::{Instruction, OP_MOVE, OP_INT_ADD, OP_INT_SUB, OP_DONE, OP_INT_MUL, OP_INT_DIV, OP_INVOKE};
 use crate::token::{Token, Tokenizer};
 use crate::typing::DataType;
 
@@ -74,6 +76,8 @@ pub fn parse_event(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result
     let offset = compilation.next_instruction as u16;
     compilation.write_event(name, offset)?;
 
+    connect_invoke(compilation, name, offset)?;
+
     debug_assert!(compilation.is_event(offset));
     debug_assert_eq!(compilation.event_by_name(name), Some(offset));
     if offset < u16::MAX {
@@ -100,6 +104,47 @@ pub fn parse_end_event(tok: &mut Tokenizer, compilation: &mut Compilation)
     // write_done(instructions) // this would only serve as an optimization for an empty event
 }
 
+fn connect_invoke(compilation: &mut Compilation, name: &[u8], new_offset: u16) -> Result<(), &'static str> {
+    let mut update = ArrayVec::<_, 30>::new();
+    let [a, b] = new_offset.to_be_bytes();
+
+    for (index, name_range) in &mut compilation.incomplete_invocations {
+        let check = &compilation.other_bytes[name_range.start as usize..name_range.end as usize];
+        if check.eq_ignore_ascii_case(name) {
+            if let Err(_) = update.try_push(*index) {
+                return Err("internal compiler error: too many invocations updated");
+            }
+            *name_range = 0..0;
+        }
+    }
+    compilation.incomplete_invocations.retain(|(_, name_range)| *name_range != (0..0));
+
+    for index in update {
+        let instruction = &mut compilation.pick_instructions_mut()[index];
+        instruction.reg_a = a;
+        instruction.reg_b = b;
+    }
+
+    Ok(())
+}
+
+pub fn parse_invoke(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(), &'static str> {
+    let name = tok.expect_identifier()?;
+    tok.expect_end_of_input()?;
+
+    let location = if let Some(r) = compilation.event_by_name(name) {
+        r
+    } else {
+        let range = compilation.write_bytes(name)?;
+        if let Err(_) = compilation.incomplete_invocations.try_push((compilation.next_instruction, range)) {
+            return Err("too many incomplete invocations");
+        }
+        0
+    };
+    let [a, b] = location.to_be_bytes();
+    compilation.write_instruction(Instruction {opcode: OP_INVOKE, reg_a: a, reg_b: b, reg_c: 0})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,6 +162,7 @@ mod tests {
         "end event",
         "else if",
         "else",
+        "invoke",
     ];
     const PARSERS: Parsers = &[
         parse_if,
@@ -126,6 +172,7 @@ mod tests {
         parse_end_event,
         parse_else_if,
         parse_else,
+        parse_invoke,
     ];
 
     #[test]
@@ -246,6 +293,45 @@ mod tests {
 
         // optimization could make this return Some(0)
         assert_eq!(comp.event_by_name(b"do_something"), Some(1));
+    }
+
+    #[test]
+    fn invoke_backward() {
+        let source = "
+            event do_something
+            end event
+            event do_something_else
+                invoke do_something
+            end event
+        ";
+        let comp = compile(source, COMMANDS, PARSERS).unwrap();
+
+        assert_eq!(comp.pick_instructions(), &[
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_INVOKE, reg_a: 0, reg_b: 1, reg_c: 0},
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+        ]);
+
+        assert_eq!(comp.event_by_name(b"do_something"), Some(1));
+        assert_eq!(comp.event_by_name(b"do_something_else"), Some(2));
+    }
+
+    #[test]
+    fn invoke_forward() {
+        let source = "
+            invoke do_something
+            event do_something
+            end event
+        ";
+        let comp = compile(source, COMMANDS, PARSERS).unwrap();
+
+        assert_eq!(comp.pick_instructions(), &[
+            Instruction {opcode: OP_INVOKE, reg_a: 0, reg_b: 2, reg_c: 0},
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+            Instruction {opcode: OP_DONE, reg_a: 0, reg_b: 0, reg_c: 0},
+        ]);
+        assert_eq!(comp.event_by_name(b"do_something"), Some(2));
     }
 
     #[test]
