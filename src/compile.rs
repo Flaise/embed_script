@@ -80,11 +80,10 @@ const MAX_NAMES: usize = NUM_REGISTERS + 50;
 
 #[derive(Debug)]
 pub struct Compilation {
-    pub registers: [Register; NUM_REGISTERS],
+    pub registers: ArrayVec<Register, NUM_REGISTERS>,
     metadata: [RegisterInfo; NUM_REGISTERS],
     names: ArrayVec<NameSpec, MAX_NAMES>,
     pub other_bytes: [u8; NUM_OTHER_BYTES],
-    pub next_register: usize,
     pub next_byte: usize,
     instructions: ArrayVec<Instruction, 1024>,
     depth: [u8; 1024],
@@ -95,11 +94,10 @@ pub struct Compilation {
 impl Default for Compilation {
     fn default() -> Self {
         Compilation {
-            registers: [0; NUM_REGISTERS],
+            registers: Default::default(),
             metadata: [RegisterInfo::default(); NUM_REGISTERS],
             names: Default::default(),
             other_bytes: [0; NUM_OTHER_BYTES],
-            next_register: 0,
             next_byte: 0,
             instructions: Default::default(),
             depth: [0; 1024],
@@ -140,11 +138,11 @@ impl Compilation {
     }
 
     pub fn pick_registers(&self) -> &[Register] {
-        &self.registers[..self.next_register]
+        &self.registers
     }
 
     pub fn pick_registers_mut(&mut self) -> &mut [Register] {
-        &mut self.registers[..self.next_register]
+        &mut self.registers
     }
 
     #[cfg(test)]
@@ -179,7 +177,7 @@ impl Compilation {
 
     pub fn as_actor(&mut self) -> Actor {
         let (constants, outbox) = self.other_bytes.split_at_mut(self.next_byte);
-        let registers = &mut self.registers[..self.next_register];
+        let registers = &mut self.registers;
         let instructions = &self.instructions;
         let names = self.names.as_ref();
         Actor {registers, instructions, constants, outbox, names}
@@ -314,12 +312,8 @@ impl Compilation {
     }
 
     fn write_register(&mut self, value: u32) -> Result<u8, &'static str> {
-        if self.next_register >= self.registers.len() {
-            return Err("too many variables/constants");
-        }
-        let id = into_inst_index(self.next_register)?;
-        self.registers[self.next_register] = value;
-        self.next_register += 1;
+        let id = into_inst_index(self.registers.len())?;
+        self.registers.try_push(value).map_err(|_| "too many variables/constants")?;
         Ok(id)
     }
 
@@ -355,7 +349,7 @@ impl Compilation {
             return Err("a variable name must be 50 characters or less");
         }
 
-        for i in 0..self.next_register {
+        for i in 0..self.registers.len() {
             let meta = &self.metadata[i];
             let found_name = self.register_name(i as u8);
 
@@ -386,7 +380,7 @@ impl Compilation {
     fn write_constant(&mut self, value: u32, data_type: DataType) -> Result<u8, &'static str> {
         debug_assert!(data_type != DataType::Unknown, "all constants should have a known type");
 
-        for i in 0..self.next_register {
+        for i in 0..self.registers.len() {
             let meta = &self.metadata[i];
             if meta.constant && meta.data_type == data_type && self.registers[i] == value {
                 return into_inst_index(i);
@@ -579,9 +573,9 @@ mod tests {
         wr.write_variable(b"asdf", DataType::Unknown).unwrap();
         wr.write_variable(b"asdf", DataType::Unknown).unwrap();
 
-        assert_eq!(wr.next_register, 1);
+        assert_eq!(wr.registers.len(), 1);
         assert_eq!(wr.register_name(0), b"asdf");
-        assert_eq!(&wr.registers[0..2], &[0, 0]);
+        assert_eq!(wr.registers.as_ref(), &[0]);
         assert_eq!(wr.register_by_name(b"asdf"), Some(0));
     }
 
@@ -591,9 +585,9 @@ mod tests {
         wr.write_variable(b"asdf", DataType::Unknown).unwrap();
         wr.write_variable(b"ASDF", DataType::Unknown).unwrap();
 
-        assert_eq!(wr.next_register, 1);
+        assert_eq!(wr.registers.len(), 1);
         assert_eq!(wr.register_name(0), b"asdf");
-        assert_eq!(&wr.registers[0..2], &[0, 0]);
+        assert_eq!(wr.registers.as_ref(), &[0]);
         assert_eq!(wr.register_by_name(b"asdf"), Some(0));
     }
 

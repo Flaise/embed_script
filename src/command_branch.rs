@@ -232,7 +232,7 @@ mod tests {
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(&comp.registers[0..3], &[0, 20, 0]);
+        assert_eq!(comp.registers.as_ref(), &[0, 20]);
         assert_eq!(comp.pick_instructions(), &[
             Instruction {opcode: OP_INT_NE, a: 0, b: 0, c: 1},
             Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
@@ -249,7 +249,7 @@ mod tests {
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(&comp.registers[0..3], &[0, 10, 0]);
+        assert_eq!(comp.registers.as_ref(), &[0, 10]);
         assert_eq!(comp.pick_instructions(), &[
             Instruction {opcode: OP_INT_EQ, a: 0, b: 0, c: 1},
             Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
@@ -266,7 +266,7 @@ mod tests {
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(&comp.registers[0..3], &[0, 10, 0]);
+        assert_eq!(comp.registers.as_ref(), &[0, 10]);
         assert_eq!(comp.pick_instructions(), &[
             Instruction {opcode: OP_INT_EQ, a: 0, b: 0, c: 1},
             Instruction {opcode: OP_INT_NE, a: 0, b: 0, c: 1},
@@ -289,7 +289,7 @@ mod tests {
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(&comp.registers[0..3], &[0, 10, 0]);
+        assert_eq!(comp.registers.as_ref(), &[0, 10]);
         assert_eq!(comp.pick_instructions(), &[
             // separates top scope from event
             Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0},
@@ -313,7 +313,7 @@ mod tests {
         ";
         let comp = compile(source, COMMANDS, PARSERS).unwrap();
 
-        assert_eq!(&comp.registers[0..3], &[0, 10, 0]);
+        assert_eq!(comp.registers.as_ref(), &[0, 10]);
         assert_eq!(comp.pick_instructions(), &[
             Instruction {opcode: OP_INT_NE, a: 1, b: 0, c: 1},
             Instruction {opcode: OP_JUMP, a: 0, b: 0, c: 0},
