@@ -73,7 +73,7 @@ pub fn parse_event(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result
     compilation.increase_nesting();
 
     // TODO: need to check for failures in all casts
-    let offset = compilation.next_instruction as u16;
+    let offset = compilation.next_instruction_offset() as u16;
     compilation.write_event(name, offset)?;
 
     connect_invoke(compilation, name, offset)?;
@@ -136,7 +136,8 @@ pub fn parse_invoke(tok: &mut Tokenizer, compilation: &mut Compilation) -> Resul
         r
     } else {
         let range = compilation.write_bytes(name)?;
-        if let Err(_) = compilation.incomplete_invocations.try_push((compilation.next_instruction, range)) {
+        let element = (compilation.next_instruction_offset(), range);
+        if let Err(_) = compilation.incomplete_invocations.try_push(element) {
             return Err("too many incomplete invocations");
         }
         0

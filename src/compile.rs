@@ -86,8 +86,7 @@ pub struct Compilation {
     pub other_bytes: [u8; NUM_OTHER_BYTES],
     pub next_register: usize,
     pub next_byte: usize,
-    instructions: [Instruction; 1024],
-    pub next_instruction: usize,
+    instructions: ArrayVec<Instruction, 1024>,
     depth: [u8; 1024],
     pub current_depth: u8,
     pub incomplete_invocations: ArrayVec<(usize, Range<u16>), 30>,
@@ -102,8 +101,7 @@ impl Default for Compilation {
             other_bytes: [0; NUM_OTHER_BYTES],
             next_register: 0,
             next_byte: 0,
-            instructions: [Instruction::default(); 1024],
-            next_instruction: 0,
+            instructions: Default::default(),
             depth: [0; 1024],
             current_depth: 0,
             incomplete_invocations: Default::default(),
@@ -118,7 +116,7 @@ fn into_inst_index(index: usize) -> Result<u8, &'static str> {
 impl Compilation {
 
     pub fn nesting_depth_at(&self, index: usize) -> Option<u8> {
-        if index >= self.next_instruction {
+        if index >= self.instructions.len() {
             return None;
         }
         Some(self.depth[index])
@@ -153,36 +151,36 @@ impl Compilation {
     pub fn active_instructions(&self) -> &[Instruction] {
         if let Some(inst) = self.last_instruction() {
             if inst.opcode == OP_DONE {
-                return &self.instructions[..self.next_instruction - 1];
+                return &self.instructions[..self.instructions.len() - 1];
             }
         }
-        &self.instructions[..self.next_instruction]
+        &self.instructions
     }
 
     pub fn pick_depth(&self) -> &[u8] {
-        &self.depth[..self.next_instruction]
+        &self.depth[..self.instructions.len()]
     }
 
     pub fn pick_instructions(&self) -> &[Instruction] {
-        &self.instructions[..self.next_instruction]
+        &self.instructions
     }
 
     pub fn pick_instructions_mut(&mut self) -> &mut [Instruction] {
-        &mut self.instructions[..self.next_instruction]
+        &mut self.instructions
     }
 
     pub fn last_instruction(&self) -> Option<&Instruction> {
-        if self.next_instruction == 0 {
-            None
-        } else {
-            Some(&self.instructions[self.next_instruction - 1])
-        }
+        self.instructions.last()
+    }
+
+    pub fn next_instruction_offset(&self) -> usize {
+        self.instructions.len()
     }
 
     pub fn as_actor(&mut self) -> Actor {
         let (constants, outbox) = self.other_bytes.split_at_mut(self.next_byte);
         let registers = &mut self.registers[..self.next_register];
-        let instructions = &self.instructions[..self.next_instruction];
+        let instructions = &self.instructions;
         let names = self.names.as_ref();
         Actor {registers, instructions, constants, outbox, names}
     }
@@ -431,7 +429,7 @@ impl Compilation {
     }
 
     pub fn write_event(&mut self, name: &[u8], offset: u16) -> Result<(), &'static str> {
-        if offset as usize > self.next_instruction {
+        if offset as usize > self.instructions.len() {
             // create event for existing instruction or next upcoming instruction
             return Err("event offset out of range");
         }
@@ -450,12 +448,8 @@ impl Compilation {
     }
 
     pub fn write_instruction(&mut self, instruction: Instruction) -> Result<(), &'static str> {
-        if self.next_instruction >= self.instructions.len() {
-            return Err("too many bytecode instructions");
-        }
-        self.instructions[self.next_instruction] = instruction;
-        self.depth[self.next_instruction] = self.current_depth;
-        self.next_instruction += 1;
+        self.instructions.try_push(instruction).map_err(|_| "too many bytecode instructions")?;
+        self.depth[self.instructions.len() - 1] = self.current_depth;
         Ok(())
     }
 }
@@ -509,15 +503,9 @@ pub fn compile(source: &[u8], commands: Commands, parsers: &[Parser])
 
     let mut script = Script::new(source);
     let mut compilation = Compilation::default();
-
-    let mut prev_len = 0;
+    let mut prev_len = script.source.len();
 
     loop {
-        if compilation.next_instruction != 0 && script.source.len() >= prev_len {
-            return Err("internal compiler error: no bytes processed");
-        }
-        prev_len = script.source.len();
-
         let scanop = script_next(&mut script, commands);
 
         match scanop {
@@ -531,7 +519,7 @@ pub fn compile(source: &[u8], commands: Commands, parsers: &[Parser])
                 }
             }
             ScanOp::Done => {
-                if compilation.next_instruction < compilation.instructions.len() {
+                if compilation.instructions.len() < compilation.instructions.capacity() {
                     if compilation.last_instruction().map(|inst| inst.opcode == OP_DONE) != Some(true) {
                         compilation.write_instruction(Instruction {
                             opcode: OP_DONE,
@@ -548,6 +536,11 @@ pub fn compile(source: &[u8], commands: Commands, parsers: &[Parser])
                 return Err(error.static_display());
             }
         }
+
+        if script.source.len() >= prev_len {
+            return Err("internal compiler error: no bytes processed");
+        }
+        prev_len = script.source.len();
     }
 }
 

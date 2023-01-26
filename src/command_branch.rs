@@ -57,8 +57,8 @@ fn is_branch_opcode(opcode: u8) -> bool {
 fn connect_if(compilation: &mut Compilation) -> Result<(), &'static str> {
     let depth = compilation.current_depth;
 
-    for dist in 0..compilation.next_instruction {
-        let current_index = compilation.next_instruction - dist - 1;
+    for dist in 0..compilation.next_instruction_offset() {
+        let current_index = compilation.next_instruction_offset() - dist - 1;
 
         let found_depth = if let Some(d) = compilation.nesting_depth_at(current_index) {
             d
@@ -103,8 +103,8 @@ fn connect_if(compilation: &mut Compilation) -> Result<(), &'static str> {
 fn connect_jumps(compilation: &mut Compilation) -> Result<(), &'static str> {
     let depth = compilation.current_depth;
 
-    for dist in 0..compilation.next_instruction {
-        let current_index = compilation.next_instruction - dist - 1;
+    for dist in 0..compilation.next_instruction_offset() {
+        let current_index = compilation.next_instruction_offset() - dist - 1;
 
         let found_depth = if let Some(d) = compilation.nesting_depth_at(current_index) {
             d
