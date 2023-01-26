@@ -9,13 +9,12 @@ PRINT
 PRINT Apparently it's up to you to save the world.
 
 EVENT before_each
-    #PRINT (running before each)
-    #OPTION town_square: teleport back to the town square??? :O
 END EVENT
 
 EVENT after_each
-    #PRINT (running after each)
-    #OPTION town_square: NORLY just teleport back to town square
+    IF indoors = 0
+        PRINT It's a bit cold out at the moment.
+    END IF
 END EVENT
 
 EVENT starting
@@ -23,40 +22,95 @@ EVENT starting
 END EVENT
 
 EVENT town_square
+    SET indoors: 0
+
     IF visited_town_square = 1
         PRINT Back in the middle of town.
-
-        PRINT The buildings are made mostly of wood and they're old but in decent repair. To the north is the clock tower, tall and imposing but difficult to read at this hour. It's about 6:00 in the morning. To the east, a bit of a walk from here, is the workshop that the local mage lives and works at.
     ELSE
         SET visited_town_square: 1
 
-        PRINT You are standing outside in the middle of a small town. The buildings are made mostly of wood and they're old but in decent repair. To the north is the clock tower, tall and imposing but difficult to read at this hour. It's about 6:00 in the morning. To the east, a bit of a walk from here, is the workshop that the local mage lives and works at.
+        PRINT You are standing outside in the middle of a small town.
     END IF
 
-    OPTION clock_tower: north - The Clock Tower
-    OPTION workshop   : east  - The Mage's Workshop
+    PRINT The buildings are made mostly of wood and they're old but in decent repair. To the north is the clock tower, tall and imposing but difficult to read at this hour. It's about 6:00 in the morning. To the east, a bit of a walk from here, is the workshop that the local mage lives and works at. Meadering south is the road leading out of town.
+
+    OPTION clock_tower  : north - The Clock Tower
+    OPTION workshop     : east  - The Mage's Workshop
+    OPTION south_of_town: south - Out of town
+END EVENT
+
+EVENT south_of_town
+    SET indoors: 0
+
+    PRINT You're on a dusty road in a grassy field. To the north is a small town and to the east several yards from the road is a small house.
+
+    IF visited_home = 0
+        PRINT You think this is where you live. There is a small plaque on the mailbox beside the front door with the word "Rogus" engraved on it. Yes, this is definitely your home.
+    ELSE
+        PRINT There is a small plaque on the mailbox beside the front door with the word "Rogus" engraved on it, so as to remind others that you live here. No one but you is named Rogus.
+    END IF
+
+    OPTION town_square: north - Back into town
+    OPTION home_enter : east  - The small house
+END EVENT
+
+EVENT home_enter
+    SET indoors: 1
+
+    PRINT The front door opens with a loud creak and you step inside.
+    INVOKE home
+END EVENT
+
+EVENT home
+    SET indoors: 1
+    SET visited_home: 1
+
+    PRINT Inside are seemingly hundreds of boxes, stacked in twisted spiralling patterns that no one but you could remember. It's a perfectly tuned system. There's no furniture except a bed because the boxes are enough. Some day you will find buyers for all of these items but for now you should, of course, be preparing to save the world. Maybe you can find something in your archive that would be useful.
+    INVOKE home_options
+END EVENT
+
+EVENT home_options
+    OPTION home_search: Search for useful items
+    OPTION home_leave : Leave
+END EVENT
+
+EVENT home_leave
+    PRINT You step outside and lean against the door hard enough to make it stay closed.
+    INVOKE south_of_town
+END EVENT
+
+EVENT home_search
+    PRINT You spend a half hour searching through your boxes.
+    PRINT (Maybe you'd have found something if that part of the story were written.)
+    INVOKE home_options
 END EVENT
 
 EVENT workshop
-    PRINT You're in front of the mage's workshop. You can't recall seeing him away from his workshop, but you've visited a few times over the years to buy trinkets and have small items repaired. Maybe it would be worthwhile to talk to him about saving the world.
+    SET indoors: 0
 
-    OPTION workshop_door: Knock on the door
+    PRINT You're in front of the mage's workshop. You can't recall seeing him away from his workshop, but you've visited a few times over the years to buy trinkets and have small items repaired.
+    IF visited_workshop_inside = 0
+        PRINT Maybe it would be worthwhile to talk to him about saving the world.
+    END IF
+
+    OPTION workshop_inside: Knock on the door
     OPTION town_square  : Leave
 END EVENT
 
-EVENT workshop_door
-    IF visited_door = 0
-        SET visited_door: 1
+EVENT workshop_inside
+    SET indoors: 1
+    SET visited_workshop_inside: 1
 
-        PRINT Unfortunately, that's not implemented yet.
-    ELSE
-        PRINT Unfortunately, that's still not implemented yet. Sorry.
-    END IF
+    PRINT As expected, the mage is present. He lets you in.
+    PRINT ...
+    PRINT Maybe another time you will find out what he has to say.
 
-    OPTION workshop: Never mind
+    OPTION workshop: Leave
 END EVENT
 
 EVENT clock_tower
+    SET indoors: 0
+
     PRINT You can hear the ticking of the gears from here.
 
     IF visited_clock = 0

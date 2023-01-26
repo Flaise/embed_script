@@ -75,7 +75,7 @@ pub fn event_by_name(names: &[NameSpec], other_bytes: &[u8], check: &[u8]) -> Op
     None
 }
 
-const NUM_OTHER_BYTES: usize = 1024 * 3;
+const NUM_OTHER_BYTES: usize = 1024 * 4;
 const MAX_NAMES: usize = NUM_REGISTERS + 50;
 
 #[derive(Debug)]
