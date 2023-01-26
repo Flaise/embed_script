@@ -2,7 +2,6 @@ use core::cmp::max;
 use core::convert::TryInto;
 use core::ops::Range;
 use arrayvec::ArrayVec;
-
 use crate::instruction::{Instruction, OP_DONE};
 use crate::scan::{ScanOp, Script, script_next};
 use crate::execute::Actor;
@@ -11,7 +10,7 @@ use crate::typing::{DataType, Register, int_to_register, float_to_register, rang
 
 pub type Parser = fn(parameters: &mut Tokenizer, registers: &mut Compilation) -> Result<(), &'static str>;
 pub type Parsers<'a> = &'a [Parser];
-pub type Commands<'a> = &'a [&'a str];
+pub type Commands<'a> = &'a [&'a [u8]];
 
 #[cfg(test)]
 pub fn execute_compilation(compilation: &mut Compilation) -> Result<(), &'static str> {
@@ -353,20 +352,21 @@ impl Compilation {
         }
     }
 
-    pub fn write_variable(&mut self, name: &str, data_type: DataType) -> Result<u8, &'static str> {
-        if name.contains(|c: char| c.is_whitespace()) {
-            return Err("a variable name can't contain spaces or tabs");
+    pub fn write_variable(&mut self, name: &[u8], data_type: DataType) -> Result<u8, &'static str> {
+        for c in name {
+            if (*c as char).is_ascii_whitespace() {
+                return Err("a variable name can't contain spaces or tabs");
+            }
         }
         if name.len() > 50 {
             return Err("a variable name must be 50 characters or less");
         }
-        let name_bytes = name.as_bytes();
 
         for i in 0..self.next_register {
             let meta = &self.metadata[i];
             let found_name = self.register_name(i as u8);
 
-            if !meta.constant && found_name.eq_ignore_ascii_case(name_bytes) {
+            if !meta.constant && found_name.eq_ignore_ascii_case(name) {
                 if data_type != DataType::Unknown {
                     if meta.data_type != data_type {
                         return Err("type mismatch");
@@ -384,7 +384,7 @@ impl Compilation {
         let meta = &mut self.metadata[id as usize];
         meta.data_type = data_type;
 
-        self.write_name(name_bytes, id as u16)?;
+        self.write_name(name, id as u16)?;
 
         debug_assert_eq!(self.get_data_type(id), data_type);
         Ok(id)
@@ -506,7 +506,7 @@ pub fn token_to_register_id(compilation: &mut Compilation, token: Token, constan
     }
 }
 
-pub fn compile(source: &str, commands: Commands, parsers: &[Parser])
+pub fn compile(source: &[u8], commands: Commands, parsers: &[Parser])
 -> Result<Compilation, &'static str> {
     if commands.len() != parsers.len() {
         return Err("command list and parser list must be the same length");
@@ -563,9 +563,9 @@ mod tests {
     use crate::typing::register_to_range;
 
     const COMMANDS: Commands = &[
-        "if",
-        "end if",
-        "set",
+        b"if",
+        b"end if",
+        b"set",
     ];
 
     fn no(_: &mut Tokenizer, _: &mut Compilation) -> Result<(), &'static str> {
@@ -580,7 +580,7 @@ mod tests {
 
     #[test]
     fn empty_termination() {
-        let compilation = compile("\t \n\t ", COMMANDS, PARSERS).unwrap();
+        let compilation = compile(b"\t \n\t ", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(compilation.instructions[0], Instruction {opcode: OP_DONE, a: 0, b: 0, c: 0});
     }
@@ -588,8 +588,8 @@ mod tests {
     #[test]
     fn write_same_variable() {
         let mut wr = Compilation::default();
-        wr.write_variable("asdf", DataType::Unknown).unwrap();
-        wr.write_variable("asdf", DataType::Unknown).unwrap();
+        wr.write_variable(b"asdf", DataType::Unknown).unwrap();
+        wr.write_variable(b"asdf", DataType::Unknown).unwrap();
 
         assert_eq!(wr.next_register, 1);
         assert_eq!(wr.register_name(0), b"asdf");
@@ -600,8 +600,8 @@ mod tests {
     #[test]
     fn write_same_variable_case_insensitive() {
         let mut wr = Compilation::default();
-        wr.write_variable("asdf", DataType::Unknown).unwrap();
-        wr.write_variable("ASDF", DataType::Unknown).unwrap();
+        wr.write_variable(b"asdf", DataType::Unknown).unwrap();
+        wr.write_variable(b"ASDF", DataType::Unknown).unwrap();
 
         assert_eq!(wr.next_register, 1);
         assert_eq!(wr.register_name(0), b"asdf");
@@ -677,7 +677,7 @@ mod tests {
     #[test]
     fn no_event_register_name_collision() {
         let mut wr = Compilation::default();
-        wr.write_variable("asdf", DataType::Unknown).unwrap();
+        wr.write_variable(b"asdf", DataType::Unknown).unwrap();
         wr.write_event(b"asdf", 0).unwrap_err();
     }
 

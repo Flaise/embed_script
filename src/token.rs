@@ -4,10 +4,10 @@ use core::str::from_utf8;
 pub enum Token<'a> {
     Done,
     CommandEnd,
-    Identifier(&'a str),
+    Identifier(&'a [u8]),
     Integer(i32),
     Float(f32),
-    Symbol(&'a str),
+    Symbol(&'a [u8]),
     Err(()), // TODO
 }
 
@@ -58,9 +58,9 @@ enum TokenState {
     Symbol,
 }
 
-pub fn tokenize<'a>(source: &'a str) -> Tokenizer<'a> {
+pub fn tokenize<'a>(source: &'a [u8]) -> Tokenizer<'a> {
     Tokenizer {
-        source: source.as_bytes(),
+        source,
         in_command: false,
         next_token: None,
         last_result: Token::Done,
@@ -91,7 +91,7 @@ impl<'a> Tokenizer<'a> {
 
     pub fn expect_identifier(&mut self) -> Result<&'a [u8], &'static str> {
         match self.next() {
-            Token::Identifier(val) => Ok(val.as_bytes()),
+            Token::Identifier(val) => Ok(val),
             _ => {
                 // TODO: need to show token to user
                 Err("expected identifier")
@@ -101,7 +101,7 @@ impl<'a> Tokenizer<'a> {
 
     pub fn expect_symbol(&mut self) -> Result<&'a [u8], &'static str> {
         match self.next() {
-            Token::Symbol(sym) => Ok(sym.as_bytes()),
+            Token::Symbol(sym) => Ok(sym),
             _ => {
                 Err("expected symbol")
             }
@@ -132,7 +132,7 @@ impl<'a> Tokenizer<'a> {
     pub fn next(&mut self) -> Token<'a> {
         let next = self.next_token.take().unwrap_or_else(|| self.next_simple());
         self.last_result = match next {
-            minus @ Token::Symbol("-") => {
+            minus @ Token::Symbol(b"-") => {
                 match self.last_result {
                     Token::Integer(_) | Token::Float(_) | Token::Identifier(_) => {
                         minus
@@ -249,6 +249,10 @@ impl<'a> Tokenizer<'a> {
                     };
                     if done {
                         let seg = self.pick_segment(last_index);
+                        let seg = match from_utf8(seg) {
+                            Ok(val) => val,
+                            Err(_) => return Token::Err(()),
+                        };
                         match seg.parse::<i32>() {
                             Ok(val) => return Token::Integer(val),
                             Err(_) => return Token::Err(()),
@@ -275,10 +279,14 @@ impl<'a> Tokenizer<'a> {
                     };
                     if done {
                         let seg = self.pick_segment(last_index);
-                        if seg.as_bytes()[seg.len() - 1] == b'.' {
+                        if seg[seg.len() - 1] == b'.' {
                             // No trailing dot allowed in floating point numbers.
                             return Token::Err(()); // TODO
                         }
+                        let seg = match from_utf8(seg) {
+                            Ok(val) => val,
+                            Err(_) => return Token::Err(()),
+                        };
                         match seg.parse::<f32>() {
                             Ok(val) => return Token::Float(val),
                             Err(_) => return Token::Err(()),
@@ -305,8 +313,8 @@ impl<'a> Tokenizer<'a> {
                         let seg = self.pick_segment(last_index);
 
                         if cfg!(debug_assertions) {
-                            for c in seg.bytes() {
-                                debug_assert!(is_symbol_char(c));
+                            for c in seg {
+                                debug_assert!(is_symbol_char(*c));
                             }
                         }
 
@@ -344,8 +352,8 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn pick_segment(&mut self, index: usize) -> &'a str {
-        let result = from_utf8(&self.source[..index]).unwrap();
+    fn pick_segment(&mut self, index: usize) -> &'a [u8] {
+        let result = &self.source[..index];
         self.source = &self.source[index..];
         result
     }
@@ -357,428 +365,428 @@ mod tests {
 
     #[test]
     fn one_ident() {
-        let mut tokenizer = tokenize("one");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
+        let mut tokenizer = tokenize(b"one");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn two_ident() {
-        let mut tokenizer = tokenize("one two");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("two"));
+        let mut tokenizer = tokenize(b"one two");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"two"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn three_ident() {
-        let mut tokenizer = tokenize("one two three");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("two"));
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("three"));
+        let mut tokenizer = tokenize(b"one two three");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"two"));
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"three"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn extra_spaces() {
-        let mut tokenizer = tokenize(" one    ");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
+        let mut tokenizer = tokenize(b" one    ");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn extra_internal_spaces() {
-        let mut tokenizer = tokenize("one     two");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("two"));
+        let mut tokenizer = tokenize(b"one     two");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"two"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn leading_tabs_ok() {
-        let mut tokenizer = tokenize("\tone");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
+        let mut tokenizer = tokenize(b"\tone");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn trailing_tabs_ok() {
-        let mut tokenizer = tokenize("one\t");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
+        let mut tokenizer = tokenize(b"one\t");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn surrounded_by_tabs() {
-        let mut tokenizer = tokenize("\tone\t");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
+        let mut tokenizer = tokenize(b"\tone\t");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn no_tabs_between_tokens() {
-        let mut tokenizer = tokenize("\tone two\t");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("two"));
+        let mut tokenizer = tokenize(b"\tone two\t");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"two"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn internal_tab_bad() {
-        let mut tokenizer = tokenize("one\ttwo");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
+        let mut tokenizer = tokenize(b"one\ttwo");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
         assert!(tokenizer.next_simple().is_err());
     }
 
     #[test]
     fn internal_tab_and_space_bad() {
-        let mut tokenizer = tokenize("one \ttwo");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
+        let mut tokenizer = tokenize(b"one \ttwo");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
         assert!(tokenizer.next_simple().is_err());
     }
 
     #[test]
     fn infix() {
-        let mut tokenizer = tokenize("one+two");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
-        assert_eq!(tokenizer.next_simple(), Token::Symbol("+"));
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("two"));
+        let mut tokenizer = tokenize(b"one+two");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b"+"));
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"two"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn infix_spaces() {
-        let mut tokenizer = tokenize("one + two");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
-        assert_eq!(tokenizer.next_simple(), Token::Symbol("+"));
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("two"));
+        let mut tokenizer = tokenize(b"one + two");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b"+"));
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"two"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn binary_minus() {
-        let mut tokenizer = tokenize("one-two");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
-        assert_eq!(tokenizer.next_simple(), Token::Symbol("-"));
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("two"));
+        let mut tokenizer = tokenize(b"one-two");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b"-"));
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"two"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn binary_minus_spaces() {
-        let mut tokenizer = tokenize("one - two");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
-        assert_eq!(tokenizer.next_simple(), Token::Symbol("-"));
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("two"));
+        let mut tokenizer = tokenize(b"one - two");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b"-"));
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"two"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn integer_minus_spaces() {
-        let mut tokenizer = tokenize("1 - 2");
+        let mut tokenizer = tokenize(b"1 - 2");
         assert_eq!(tokenizer.next_simple(), Token::Integer(1));
-        assert_eq!(tokenizer.next_simple(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b"-"));
         assert_eq!(tokenizer.next_simple(), Token::Integer(2));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn prefix_minus_space() {
-        let mut tokenizer = tokenize(" - one");
-        assert_eq!(tokenizer.next_simple(), Token::Symbol("-"));
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
+        let mut tokenizer = tokenize(b" - one");
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b"-"));
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn prefix_minus() {
-        let mut tokenizer = tokenize("-one");
-        assert_eq!(tokenizer.next_simple(), Token::Symbol("-"));
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
+        let mut tokenizer = tokenize(b"-one");
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b"-"));
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn prefix_minus_digits() {
-        let mut tokenizer = tokenize(" - 1");
-        assert_eq!(tokenizer.next_simple(), Token::Symbol("-"));
+        let mut tokenizer = tokenize(b" - 1");
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b"-"));
         assert_eq!(tokenizer.next_simple(), Token::Integer(1));
         assert_eq!(tokenizer.next_simple(), Token::Done);
 
-        let mut tokenizer = tokenize(" -- 1");
-        assert_eq!(tokenizer.next_simple(), Token::Symbol("--"));
+        let mut tokenizer = tokenize(b" -- 1");
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b"--"));
         assert_eq!(tokenizer.next_simple(), Token::Integer(1));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn prefix() {
-        let mut tokenizer = tokenize("+one");
-        assert_eq!(tokenizer.next_simple(), Token::Symbol("+"));
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
+        let mut tokenizer = tokenize(b"+one");
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b"+"));
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
 
-        let mut tokenizer = tokenize(" + one");
-        assert_eq!(tokenizer.next_simple(), Token::Symbol("+"));
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
+        let mut tokenizer = tokenize(b" + one");
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b"+"));
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn assignment_command() {
-        let mut tokenizer = tokenize("result: a + 1");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("result"));
-        assert_eq!(tokenizer.next_simple(), Token::Symbol(":"));
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("a"));
-        assert_eq!(tokenizer.next_simple(), Token::Symbol("+"));
+        let mut tokenizer = tokenize(b"result: a + 1");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"result"));
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b":"));
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"a"));
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b"+"));
         assert_eq!(tokenizer.next_simple(), Token::Integer(1));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn assignment_condensed() {
-        let mut tokenizer = tokenize("result:a+1");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("result"));
-        assert_eq!(tokenizer.next_simple(), Token::Symbol(":"));
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("a"));
-        assert_eq!(tokenizer.next_simple(), Token::Symbol("+"));
+        let mut tokenizer = tokenize(b"result:a+1");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"result"));
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b":"));
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"a"));
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b"+"));
         assert_eq!(tokenizer.next_simple(), Token::Integer(1));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn conditional_int_gaps() {
-        let mut tokenizer = tokenize("a >= 3");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("a"));
-        assert_eq!(tokenizer.next_simple(), Token::Symbol(">="));
+        let mut tokenizer = tokenize(b"a >= 3");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"a"));
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b">="));
         assert_eq!(tokenizer.next_simple(), Token::Integer(3));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn conditional_float() {
-        let mut tokenizer = tokenize("r<=3.14");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("r"));
-        assert_eq!(tokenizer.next_simple(), Token::Symbol("<="));
+        let mut tokenizer = tokenize(b"r<=3.14");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"r"));
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b"<="));
         assert_eq!(tokenizer.next_simple(), Token::Float(3.14));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn integers() {
-        let mut tokenizer = tokenize("1");
+        let mut tokenizer = tokenize(b"1");
         assert_eq!(tokenizer.next_simple(), Token::Integer(1));
         assert_eq!(tokenizer.next_simple(), Token::Done);
 
-        let mut tokenizer = tokenize("2");
+        let mut tokenizer = tokenize(b"2");
         assert_eq!(tokenizer.next_simple(), Token::Integer(2));
         assert_eq!(tokenizer.next_simple(), Token::Done);
 
-        let mut tokenizer = tokenize("2000000");
+        let mut tokenizer = tokenize(b"2000000");
         assert_eq!(tokenizer.next_simple(), Token::Integer(2000000));
         assert_eq!(tokenizer.next_simple(), Token::Done);
 
-        let mut tokenizer = tokenize("0");
+        let mut tokenizer = tokenize(b"0");
         assert_eq!(tokenizer.next_simple(), Token::Integer(0));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn fractional_numbers() {
-        let mut tokenizer = tokenize("1.0");
+        let mut tokenizer = tokenize(b"1.0");
         assert_eq!(tokenizer.next_simple(), Token::Float(1.0));
         assert_eq!(tokenizer.next_simple(), Token::Done);
 
-        let mut tokenizer = tokenize("2.0");
+        let mut tokenizer = tokenize(b"2.0");
         assert_eq!(tokenizer.next_simple(), Token::Float(2.0));
         assert_eq!(tokenizer.next_simple(), Token::Done);
 
-        let mut tokenizer = tokenize("-3.0");
-        assert_eq!(tokenizer.next_simple(), Token::Symbol("-"));
+        let mut tokenizer = tokenize(b"-3.0");
+        assert_eq!(tokenizer.next_simple(), Token::Symbol(b"-"));
         assert_eq!(tokenizer.next_simple(), Token::Float(3.0));
         assert_eq!(tokenizer.next_simple(), Token::Done);
 
-        let mut tokenizer = tokenize("0.125");
+        let mut tokenizer = tokenize(b"0.125");
         assert_eq!(tokenizer.next_simple(), Token::Float(0.125));
         assert_eq!(tokenizer.next_simple(), Token::Done);
 
-        let mut tokenizer = tokenize("0.0");
+        let mut tokenizer = tokenize(b"0.0");
         assert_eq!(tokenizer.next_simple(), Token::Float(0.0));
         assert_eq!(tokenizer.next_simple(), Token::Done);
 
-        let mut tokenizer = tokenize(".5"); // sloppy but ok
+        let mut tokenizer = tokenize(b".5"); // sloppy but ok
         assert_eq!(tokenizer.next_simple(), Token::Float(0.5));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn bad_floats() {
-        let mut tokenizer = tokenize("1."); // nah
+        let mut tokenizer = tokenize(b"1."); // nah
         assert!(tokenizer.next_simple().is_err());
 
-        let mut tokenizer = tokenize("."); // no digits???
+        let mut tokenizer = tokenize(b"."); // no digits???
         assert!(tokenizer.next_simple().is_err());
 
-        let mut tokenizer = tokenize("1.1.");
+        let mut tokenizer = tokenize(b"1.1.");
         assert!(tokenizer.next_simple().is_err());
 
-        let mut tokenizer = tokenize(".1.1");
+        let mut tokenizer = tokenize(b".1.1");
         assert!(tokenizer.next_simple().is_err());
 
-        let mut tokenizer = tokenize("1..1");
+        let mut tokenizer = tokenize(b"1..1");
         assert!(tokenizer.next_simple().is_err());
 
-        let mut tokenizer = tokenize("..1");
+        let mut tokenizer = tokenize(b"..1");
         assert!(tokenizer.next_simple().is_err());
 
-        let mut tokenizer = tokenize("1..");
+        let mut tokenizer = tokenize(b"1..");
         assert!(tokenizer.next_simple().is_err());
     }
 
     #[test]
     fn negative_integers() {
-        let mut tokenizer = tokenize("-1");
+        let mut tokenizer = tokenize(b"-1");
         assert_eq!(tokenizer.next(), Token::Integer(-1));
         assert_eq!(tokenizer.next(), Token::Done);
 
-        let mut tokenizer = tokenize("-0");
+        let mut tokenizer = tokenize(b"-0");
         assert_eq!(tokenizer.next(), Token::Integer(0));
         assert_eq!(tokenizer.next(), Token::Done);
     }
 
     #[test]
     fn negative_floats() {
-        let mut tokenizer = tokenize("-1.0");
+        let mut tokenizer = tokenize(b"-1.0");
         assert_eq!(tokenizer.next(), Token::Float(-1.0));
         assert_eq!(tokenizer.next(), Token::Done);
 
-        let mut tokenizer = tokenize("-10.125");
+        let mut tokenizer = tokenize(b"-10.125");
         assert_eq!(tokenizer.next(), Token::Float(-10.125));
         assert_eq!(tokenizer.next(), Token::Done);
 
-        let mut tokenizer = tokenize("-0.0");
+        let mut tokenizer = tokenize(b"-0.0");
         assert_eq!(tokenizer.next(), Token::Float(0.0));
         assert_eq!(tokenizer.next(), Token::Done);
     }
 
     #[test]
     fn negatives_in_arithmetic() {
-        let mut tokenizer = tokenize("2 -1.0");
+        let mut tokenizer = tokenize(b"2 -1.0");
         assert_eq!(tokenizer.next(), Token::Integer(2));
-        assert_eq!(tokenizer.next(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next(), Token::Symbol(b"-"));
         assert_eq!(tokenizer.next(), Token::Float(1.0));
         assert_eq!(tokenizer.next(), Token::Done);
 
-        let mut tokenizer = tokenize("2 -1");
+        let mut tokenizer = tokenize(b"2 -1");
         assert_eq!(tokenizer.next(), Token::Integer(2));
-        assert_eq!(tokenizer.next(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next(), Token::Symbol(b"-"));
         assert_eq!(tokenizer.next(), Token::Integer(1));
         assert_eq!(tokenizer.next(), Token::Done);
 
-        let mut tokenizer = tokenize("2-1");
+        let mut tokenizer = tokenize(b"2-1");
         assert_eq!(tokenizer.next(), Token::Integer(2));
-        assert_eq!(tokenizer.next(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next(), Token::Symbol(b"-"));
         assert_eq!(tokenizer.next(), Token::Integer(1));
         assert_eq!(tokenizer.next(), Token::Done);
     }
 
     #[test]
     fn double_symbols() {
-        let mut tokenizer = tokenize("5 + -1");
+        let mut tokenizer = tokenize(b"5 + -1");
         assert_eq!(tokenizer.next(), Token::Integer(5));
-        assert_eq!(tokenizer.next(), Token::Symbol("+"));
+        assert_eq!(tokenizer.next(), Token::Symbol(b"+"));
         assert_eq!(tokenizer.next(), Token::Integer(-1));
         assert_eq!(tokenizer.next(), Token::Done);
 
-        let mut tokenizer = tokenize("5 - -1");
+        let mut tokenizer = tokenize(b"5 - -1");
         assert_eq!(tokenizer.next(), Token::Integer(5));
-        assert_eq!(tokenizer.next(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next(), Token::Symbol(b"-"));
         assert_eq!(tokenizer.next(), Token::Integer(-1));
         assert_eq!(tokenizer.next(), Token::Done);
 
-        let mut tokenizer = tokenize("5- -1");
+        let mut tokenizer = tokenize(b"5- -1");
         assert_eq!(tokenizer.next(), Token::Integer(5));
-        assert_eq!(tokenizer.next(), Token::Symbol("-"));
+        assert_eq!(tokenizer.next(), Token::Symbol(b"-"));
         assert_eq!(tokenizer.next(), Token::Integer(-1));
         assert_eq!(tokenizer.next(), Token::Done);
     }
 
     #[test]
     fn extraneous_prefixes() {
-        let mut tokenizer = tokenize("- -1");
-        assert_eq!(tokenizer.next(), Token::Symbol("-"));
+        let mut tokenizer = tokenize(b"- -1");
+        assert_eq!(tokenizer.next(), Token::Symbol(b"-"));
         assert_eq!(tokenizer.next(), Token::Integer(-1));
         assert_eq!(tokenizer.next(), Token::Done);
 
-        let mut tokenizer = tokenize("--1");
-        assert_eq!(tokenizer.next(), Token::Symbol("--"));
+        let mut tokenizer = tokenize(b"--1");
+        assert_eq!(tokenizer.next(), Token::Symbol(b"--"));
         assert_eq!(tokenizer.next(), Token::Integer(1));
         assert_eq!(tokenizer.next(), Token::Done);
     }
 
     #[test]
     fn peek_one() {
-        let mut tokenizer = tokenize("one");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
+        let mut tokenizer = tokenize(b"one");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn peek_two() {
-        let mut tokenizer = tokenize("one two");
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("one"));
-        assert_eq!(tokenizer.next_simple(), Token::Identifier("two"));
+        let mut tokenizer = tokenize(b"one two");
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"one"));
+        assert_eq!(tokenizer.next_simple(), Token::Identifier(b"two"));
         assert_eq!(tokenizer.next_simple(), Token::Done);
     }
 
     #[test]
     fn unprocessed_bytes() {
-        let mut tokenizer = tokenize("one two");
-        assert_eq!(tokenizer.next(), Token::Identifier("one"));
+        let mut tokenizer = tokenize(b"one two");
+        assert_eq!(tokenizer.next(), Token::Identifier(b"one"));
         assert_eq!(tokenizer.remainder(), b"two");
         tokenizer.expect_end_of_input().unwrap();
     }
 
     #[test]
     fn unprocessed_bytes_leading_space() {
-        let mut tokenizer = tokenize("one  two");
-        assert_eq!(tokenizer.next(), Token::Identifier("one"));
+        let mut tokenizer = tokenize(b"one  two");
+        assert_eq!(tokenizer.next(), Token::Identifier(b"one"));
         assert_eq!(tokenizer.remainder(), b" two");
         tokenizer.expect_end_of_input().unwrap();
     }
 
     #[test]
     fn setting_expectations() {
-        let mut tok = tokenize("one");
+        let mut tok = tokenize(b"one");
         assert_eq!(tok.expect_identifier(), Ok(&b"one"[..]));
 
-        let mut tok = tokenize("one");
+        let mut tok = tokenize(b"one");
         assert!(tok.expect_end_of_input().is_err());
 
-        let mut tok = tokenize("one two");
+        let mut tok = tokenize(b"one two");
         assert_eq!(tok.expect_identifier(), Ok(&b"one"[..]));
         assert_eq!(tok.expect_identifier(), Ok(&b"two"[..]));
         assert!(tok.expect_end_of_input().is_ok());
 
-        let mut tok = tokenize("1");
+        let mut tok = tokenize(b"1");
         assert!(tok.expect_end_of_input().is_err());
 
-        let mut tok = tokenize("1invalid");
+        let mut tok = tokenize(b"1invalid");
         assert!(tok.expect_end_of_input().is_err());
     }
 
     #[test]
     fn need_any_bytes() {
-        let mut tok = tokenize("");
+        let mut tok = tokenize(b"");
         tok.expect_remainder().unwrap_err();
 
-        let mut tok = tokenize("r");
+        let mut tok = tokenize(b"r");
         tok.remainder();
         tok.expect_remainder().unwrap_err();
 
-        let mut tok = tokenize("r");
+        let mut tok = tokenize(b"r");
         tok.expect_remainder().unwrap();
         tok.expect_remainder().unwrap_err();
     }

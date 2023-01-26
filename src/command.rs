@@ -28,10 +28,10 @@ pub fn parse_set(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<(
     let op = match tok.next() {
         Token::Symbol(sym) => {
             match sym {
-                "+" => OP_INT_ADD,
-                "-" => OP_INT_SUB,
-                "*" => OP_INT_MUL,
-                "/" => OP_INT_DIV,
+                b"+" => OP_INT_ADD,
+                b"-" => OP_INT_SUB,
+                b"*" => OP_INT_MUL,
+                b"/" => OP_INT_DIV,
                 _ => return Err("unknown operator"),
             }
         }
@@ -155,14 +155,14 @@ mod tests {
     use crate::typing::{float_to_register, int_to_register};
 
     const COMMANDS: Commands = &[
-        "if",
-        "end if",
-        "set",
-        "event",
-        "end event",
-        "else if",
-        "else",
-        "invoke",
+        b"if",
+        b"end if",
+        b"set",
+        b"event",
+        b"end event",
+        b"else if",
+        b"else",
+        b"invoke",
     ];
     const PARSERS: Parsers = &[
         parse_if,
@@ -177,7 +177,7 @@ mod tests {
 
     #[test]
     fn literal_assignment() {
-        let comp = compile("set r: 7", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set r: 7", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..2], &[0, 7]);
         assert_eq!(comp.pick_instructions()[0], Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0});
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn literal_assignment_2() {
-        let comp = compile("set h: 6", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set h: 6", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..2], &[0, 6]);
         assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_MOVE, a: 0, b: 1, c: 0}]);
@@ -193,7 +193,7 @@ mod tests {
 
     #[test]
     fn assign_same_constant() {
-        let comp = compile("set h: 5\nset r: 5", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set h: 5\nset r: 5", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..3], &[0, 5, 0]);
         assert_eq!(comp.active_instructions(), &[
@@ -206,7 +206,7 @@ mod tests {
     fn assign_different_type_constant() {
         let float_5_as_reg = float_to_register(5.0);
 
-        let comp = compile("set h: 1084227584\nset r: 5.0", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set h: 1084227584\nset r: 5.0", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..4], &[0, float_5_as_reg, 0, float_5_as_reg]);
         assert_eq!(comp.active_instructions(), &[
@@ -217,7 +217,7 @@ mod tests {
 
     #[test]
     fn assign_same_variable() {
-        let comp = compile("set var: 5\nset var: 7", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set var: 5\nset var: 7", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..3], &[0, 5, 7]);
         assert_eq!(comp.active_instructions(), &[
@@ -228,7 +228,7 @@ mod tests {
 
     #[test]
     fn addition() {
-        let comp = compile("set r: a + 7", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set r: a + 7", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..3], &[0, 0, 7]);
         assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_ADD, a: 0, b: 1, c: 2}]);
@@ -236,7 +236,7 @@ mod tests {
 
     #[test]
     fn addition_with_negative() {
-        let comp = compile("set r: a + -3", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set r: a + -3", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..3], &[0, 0, int_to_register(-3)]);
         assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_ADD, a: 0, b: 1, c: 2}]);
@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn subtraction() {
-        let comp = compile("set r: a - 7", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set r: a - 7", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(&comp.registers[0..3], &[0, 0, 7]);
         assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_SUB, a: 0, b: 1, c: 2}]);
@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn multiplication() {
-        let comp = compile("set r: a * 7", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set r: a * 7", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(comp.pick_registers(), &[0, 0, 7]);
         assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_MUL, a: 0, b: 1, c: 2}]);
@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn division() {
-        let comp = compile("set r: a / 7", COMMANDS, PARSERS).unwrap();
+        let comp = compile(b"set r: a / 7", COMMANDS, PARSERS).unwrap();
 
         assert_eq!(comp.pick_registers(), &[0, 0, 7]);
         assert_eq!(comp.active_instructions(), &[Instruction {opcode: OP_INT_DIV, a: 0, b: 1, c: 2}]);
@@ -268,22 +268,22 @@ mod tests {
 
     #[test]
     fn no_trailing_operator() {
-        compile("set r: a +", COMMANDS, PARSERS).unwrap_err();
+        compile(b"set r: a +", COMMANDS, PARSERS).unwrap_err();
     }
 
     #[test]
     fn mismatched_type() {
-        compile("set r: 1\nset r: 2.0", COMMANDS, PARSERS).unwrap_err();
+        compile(b"set r: 1\nset r: 2.0", COMMANDS, PARSERS).unwrap_err();
     }
 
     #[test]
     fn no_mixed_arithmetic() {
-        compile("set r: 1 + 2.0", COMMANDS, PARSERS).unwrap_err();
+        compile(b"set r: 1 + 2.0", COMMANDS, PARSERS).unwrap_err();
     }
 
     #[test]
     fn empty_event() {
-        let source = "
+        let source = b"
             event do_something
             end event
         ";
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn invoke_backward() {
-        let source = "
+        let source = b"
             event do_something
             end event
             event do_something_else
@@ -319,7 +319,7 @@ mod tests {
 
     #[test]
     fn invoke_forward() {
-        let source = "
+        let source = b"
             invoke do_something
             event do_something
             end event
@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn event_name_collision() {
-        let source = "
+        let source = b"
             set do_something: 0
             event do_something
             end event
@@ -346,7 +346,7 @@ mod tests {
 
     #[test]
     fn event_with_command() {
-        let source = "
+        let source = b"
             event do_something
                 set something_else: 10000
             end event
@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn delimit_top_level() {
-        let source = "
+        let source = b"
             set something: 2222
             event do_something
                 set something_else: 10000
@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn stay_at_top_level() {
-        let source = "
+        let source = b"
             set thing: 22222
             event do_something
                 set thing: 10000
@@ -405,7 +405,7 @@ mod tests {
 
     #[test]
     fn goto_event() {
-        let source = "
+        let source = b"
             set thing: 22222
             event do_something
                 set thing: 10000
@@ -420,7 +420,7 @@ mod tests {
 
     #[test]
     fn exit_event() {
-        let source = "
+        let source = b"
             event do_something
                 set thing: 10000
             end event
@@ -435,7 +435,7 @@ mod tests {
 
     #[test]
     fn exit_empty_event() {
-        let source = "
+        let source = b"
             event do_something
             end event
             set thing: 22222
@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     fn exit_event_after_empty_event() {
-        let source = "
+        let source = b"
             event nothing
             end event
 

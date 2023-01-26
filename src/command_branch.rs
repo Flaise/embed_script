@@ -9,8 +9,8 @@ pub fn parse_if(tok: &mut Tokenizer, compilation: &mut Compilation) -> Result<()
     let op = match tok.next() {
         Token::Symbol(sym) => {
             match sym {
-                "=" => OP_INT_NE,
-                "!=" => OP_INT_EQ,
+                b"=" => OP_INT_NE,
+                b"!=" => OP_INT_EQ,
                 _ => return Err("unknown operator"),
             }
         }
@@ -163,13 +163,13 @@ mod tests {
     use crate::command::{parse_set, parse_event, parse_end_event};
 
     const COMMANDS: Commands = &[
-        "if",
-        "end if",
-        "set",
-        "event",
-        "end event",
-        "else if",
-        "else",
+        b"if",
+        b"end if",
+        b"set",
+        b"event",
+        b"end event",
+        b"else if",
+        b"else",
     ];
     const PARSERS: Parsers = &[
         parse_if,
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn if_equal() {
-        let source = "
+        let source = b"
             if r = 20
                 set r: 5
             end if
@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn if_equal_assignment() {
-        let source = "
+        let source = b"
             set r: 20
 
             if r = 20
@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn empty_if() {
-        let source = "
+        let source = b"
             if r = 20
             end if
         ";
@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn empty_if_not_equal() {
-        let source = "
+        let source = b"
             if r != 10
             end if
         ";
@@ -258,7 +258,7 @@ mod tests {
 
     #[test]
     fn two_empty_ifs() {
-        let source = "
+        let source = b"
             if r != 10
             end if
             if r = 10
@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn two_empty_ifs_in_event() {
-        let source = "
+        let source = b"
             event yeah
                 if r != 10
                 end if
@@ -306,7 +306,7 @@ mod tests {
 
     #[test]
     fn if_else_empty() {
-        let source = "
+        let source = b"
             if r = 10
             else
             end if
@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn if_else_set() {
-        let source = "
+        let source = b"
             if r = 10
                 set r: 11
             else
@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn if_else_if_end() {
-        let source = "
+        let source = b"
             if r = 10
                 set r: 11
             else if r = 19
@@ -367,7 +367,7 @@ mod tests {
 
     #[test]
     fn two_else_ifs() {
-        let source = "
+        let source = b"
             if r = 10
                 set r: 11
             else if r = 11
@@ -397,7 +397,7 @@ mod tests {
 
     #[test]
     fn if_inside_event_ok() {
-        let source = "
+        let source = b"
             event something
                 if omg = 999
                     set omg: 10000
@@ -415,7 +415,7 @@ mod tests {
 
     #[test]
     fn else_inside_event_ok() {
-        let source = "
+        let source = b"
             event something
                 if omg = 999
                     set omg: 10000
@@ -437,7 +437,7 @@ mod tests {
 
     #[test]
     fn no_event_inside_if() {
-        let source = "
+        let source = b"
             if dont_do_this = 999
                 event this_bad
                     set omg: 10000
@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     fn end_event_before_end_if() {
-        let source = "
+        let source = b"
             event this_also_bad
                 if no_no_no = 999
                     set omg: 10000
@@ -461,7 +461,7 @@ mod tests {
 
     #[test]
     fn event_before_end_if() {
-        let source = "
+        let source = b"
                 if no_no_no = 999
             event this_be_error
                     set omg: 10000
@@ -473,7 +473,7 @@ mod tests {
 
     #[test]
     fn nested_if_blocks() {
-        let source = "
+        let source = b"
             set thing: 2000
             if thing = 2001
                 set thing: 7000
@@ -491,7 +491,7 @@ mod tests {
 
     #[test]
     fn nested_else_blocks() {
-        let source = "
+        let source = b"
             set thing: 2000
             if thing = 2001
                 set thing: 7000
@@ -511,7 +511,7 @@ mod tests {
 
     #[test]
     fn more_nesting() {
-        let source = "
+        let source = b"
             set thing: 2000
             if thing != 2001
                 set thing: 7000
@@ -584,7 +584,7 @@ mod tests {
 
     #[test]
     fn elseiffiness() {
-        let source = "
+        let source = b"
             set thing: 2000
             if thing = 2001
                 set thing: 7000
@@ -602,7 +602,7 @@ mod tests {
 
     #[test]
     fn elseiffiness_first_branch() {
-        let source = "
+        let source = b"
             set thing: 2001
             if thing = 2001
                 set thing: 7000

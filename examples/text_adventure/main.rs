@@ -1,4 +1,4 @@
-use std::fs::read_to_string;
+use std::fs::read;
 use std::io::{stdin, BufRead, stdout, Write};
 use std::mem::take;
 use std::process::exit;
@@ -15,13 +15,11 @@ use scripting::version::compile_with_version;
 
 const FILE_NAME: &str = "adventure.script";
 
-fn read_file() -> String {
-    // TODO: let bytes = read("./adventure.script").unwrap();
-
-    if let Ok(bytes) = read_to_string(format!("./{}", FILE_NAME)) {
+fn read_file() -> Vec<u8> {
+    if let Ok(bytes) = read(format!("./{}", FILE_NAME)) {
         return bytes;
     }
-    match read_to_string(format!("./examples/text_adventure/{}", FILE_NAME)) {
+    match read(format!("./examples/text_adventure/{}", FILE_NAME)) {
         Ok(bytes) => bytes,
         Err(error) => {
             eprintln!("Unable to read file \"{}\": {}", FILE_NAME, error.to_string());
@@ -31,16 +29,16 @@ fn read_file() -> String {
 }
 
 const COMMANDS: Commands = &[
-    "if",
-    "end if",
-    "set",
-    "event",
-    "end event",
-    "print",
-    "option",
-    "else if",
-    "else",
-    "invoke",
+    b"if",
+    b"end if",
+    b"set",
+    b"event",
+    b"end event",
+    b"print",
+    b"option",
+    b"else if",
+    b"else",
+    b"invoke",
 ];
 
 const PARSERS: Parsers = &[
