@@ -9,6 +9,7 @@ PRINT
 PRINT Apparently it's up to you to save the world.
 
 EVENT before_each
+    SET indoors: 0
 END EVENT
 
 EVENT after_each
@@ -22,8 +23,6 @@ EVENT starting
 END EVENT
 
 EVENT town_square
-    SET indoors: 0
-
     IF visited_town_square = 1
         PRINT Back in the middle of town.
     ELSE
@@ -40,8 +39,6 @@ EVENT town_square
 END EVENT
 
 EVENT south_of_town
-    SET indoors: 0
-
     PRINT You're on a dusty road in a grassy field. To the north is a small town and to the east several yards from the road is a small house.
 
     IF visited_home = 0
@@ -51,10 +48,10 @@ EVENT south_of_town
     END IF
 
     OPTION town_square: north - Back into town
-    OPTION home_enter : east  - The small house
+    OPTION to_home    : east  - The small house
 END EVENT
 
-EVENT home_enter
+EVENT to_home
     SET indoors: 1
 
     PRINT The front door opens with a loud creak and you step inside.
@@ -86,15 +83,13 @@ EVENT home_search
 END EVENT
 
 EVENT workshop
-    SET indoors: 0
-
     PRINT You're in front of the mage's workshop. You can't recall seeing him away from his workshop, but you've visited a few times over the years to buy trinkets and have small items repaired.
     IF visited_workshop_inside = 0
         PRINT Maybe it would be worthwhile to talk to him about saving the world.
     END IF
 
     OPTION workshop_inside: Knock on the door
-    OPTION town_square  : Leave
+    OPTION town_square    : Leave
 END EVENT
 
 EVENT workshop_inside
@@ -109,8 +104,6 @@ EVENT workshop_inside
 END EVENT
 
 EVENT clock_tower
-    SET indoors: 0
-
     PRINT You can hear the ticking of the gears from here.
 
     IF visited_clock = 0
