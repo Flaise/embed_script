@@ -31,7 +31,7 @@ EVENT town_square
         PRINT You are standing outside in the middle of a small town.
     END IF
 
-    PRINT The buildings are made mostly of wood and they're old but in decent repair. To the north is the clock tower, tall and imposing but difficult to read at this hour. It's about 6:00 in the morning. To the east, a bit of a walk from here, is the workshop that the local mage lives and works at. Meadering south is the road leading out of town.
+    PRINT The buildings are made mostly of wood and they're old but in decent repair. To the north is the clock tower, tall and imposing but difficult to read at this hour. It's about 6:00 in the morning. To the east, a bit of a walk from here, is the workshop that the local mage lives and works at. Meandering south is the road leading out of town.
 
     OPTION clock_tower  : north - The Clock Tower
     OPTION workshop     : east  - The Mage's Workshop
@@ -110,9 +110,35 @@ EVENT clock_tower
         SET visited_clock: 1
 
         PRINT If only you could turn back time...
+        PRINT
     END IF
 
+    OPTION enter_clock: Enter
     OPTION town_square: Leave
+END EVENT
+
+EVENT enter_clock
+    IF has_clock_key = 1
+        IF entered_clock = 0
+            SET entered_clock: 1
+            PRINT You unlock the door and step inside.
+        ELSE
+            PRINT The door is already unlocked so you open it and step inside.
+        END IF
+        INVOKE inside_clock
+    ELSE
+        PRINT The door is locked.
+        PRINT
+
+        INVOKE clock_tower
+    END IF
+END EVENT
+
+EVENT inside_clock
+    SET indoors: 1
+    PRINT You feel like you aren't supposed to be here.
+
+    OPTION clock_tower: Leave
 END EVENT
 
 EVENT exiting

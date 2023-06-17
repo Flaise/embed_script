@@ -3,7 +3,8 @@ use std::io::{stdin, BufRead, stdout, Write};
 use std::mem::take;
 use std::process::exit;
 use std::str::from_utf8;
-use std::time::Instant;
+use std::thread::sleep;
+use std::time::{Instant, Duration};
 use scripting::command_branch::{parse_if, parse_end_if, parse_else, parse_else_if};
 use scripting::compile::{Commands, Parsers, Compilation};
 use scripting::execute::{Actor, execute_at, execute_event};
@@ -86,7 +87,7 @@ fn parse_option(tokenizer: &mut Tokenizer, compilation: &mut Compilation)
     compilation.write_instruction(Instruction {opcode: OP_OUTBOX_TAGGED, a: text_id, b: TAG_OPTION_TEXT, c: 0})
 }
 
-struct Option {
+struct Choice {
     label: String,
     event: Vec<u8>,
 }
@@ -94,7 +95,7 @@ struct Option {
 #[derive(Default)]
 struct Output {
     paragraphs: String,
-    options: Vec<Option>,
+    options: Vec<Choice>,
 }
 
 fn extract_outbox(actor: &Actor, output: &mut Output) {
@@ -125,7 +126,7 @@ fn extract_outbox(actor: &Actor, output: &mut Output) {
         panic!("internal error: options list malformed");
     }
 
-    let options = option_labels.into_iter().zip(option_events).map(|(label, event)| Option {label, event});
+    let options = option_labels.into_iter().zip(option_events).map(|(label, event)| Choice {label, event});
     output.options.extend(options);
 }
 
@@ -150,7 +151,7 @@ fn process_output_input(output: &mut Output) -> Vec<u8> {
     }
 
     loop {
-        print!("\nInput selection (Q to quit) > ");
+        print!("\nInput selection. (Q to quit.)\n> ");
         stdout().flush().unwrap();
 
         let read = stdin();
@@ -165,6 +166,11 @@ fn process_output_input(output: &mut Output) -> Vec<u8> {
             Ok(num) => {
                 if num > 0 && num <= output.options.len() {
                     let index = num - 1;
+
+                    println!(". {}", &output.options[index].label);
+
+                    sleep(Duration::from_millis(250));
+
                     return take(&mut output.options[index].event);
                 }
                 println!("Input is out of range.");
