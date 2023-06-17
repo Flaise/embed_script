@@ -14,11 +14,17 @@ END EVENT
 
 EVENT after_each
     IF indoors = 0
-        PRINT It's a bit cold out at the moment.
+        IF was_indoors = 1
+            PRINT It's a bit cold out at the moment.
+        END IF
     END IF
+
+    SET was_indoors: indoors
 END EVENT
 
 EVENT starting
+    SET was_indoors: 1
+
     INVOKE town_square
 END EVENT
 
