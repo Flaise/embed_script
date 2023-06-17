@@ -94,7 +94,7 @@ EVENT workshop
     END IF
 
     OPTION workshop_inside: Knock on the door
-    OPTION town_square  : Leave
+    OPTION town_square    : Leave
 END EVENT
 
 EVENT workshop_inside
@@ -117,9 +117,35 @@ EVENT clock_tower
         SET visited_clock: 1
 
         PRINT If only you could turn back time...
+        PRINT
     END IF
 
+    OPTION enter_clock: Enter
     OPTION town_square: Leave
+END EVENT
+
+EVENT enter_clock
+    IF has_clock_key = 1
+        IF entered_clock = 0
+            SET entered_clock: 1
+            PRINT You unlock the door and step inside.
+        ELSE
+            PRINT The door is already unlocked so you open it and step inside.
+        END IF
+        INVOKE inside_clock
+    ELSE
+        PRINT The door is locked.
+        PRINT
+
+        INVOKE clock_tower
+    END IF
+END EVENT
+
+EVENT inside_clock
+    SET indoors: 1
+    PRINT You feel like you aren't supposed to be here.
+
+    OPTION clock_tower: Leave
 END EVENT
 
 EVENT exiting
